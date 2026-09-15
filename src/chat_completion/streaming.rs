@@ -24,11 +24,11 @@ use stefans_utils::prelude::AsBool;
 use tokio::time::sleep;
 use tokio_stream::StreamExt;
 
-pub async fn streaming_chat_completion(
+pub async fn streaming_chat_completion<'a>(
     url: impl IntoUrl,
     body: impl Into<StreamingChatCompletionRequestBody>,
-    options: impl Into<Option<ChatCompletionOptions<'static>>>,
-) -> Result<StreamingChatCompletionResponse, Error> {
+    options: impl Into<Option<ChatCompletionOptions<'a>>>,
+) -> Result<StreamingChatCompletionResponse<'a>, Error> {
     let mut body = body.into();
 
     let (client, bearer_token, tps_throttler, mut reasoning_content_remapping_state) =

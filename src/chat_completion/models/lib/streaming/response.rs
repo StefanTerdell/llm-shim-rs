@@ -22,5 +22,5 @@ pub enum StreamingChatCompletionEvent {
     },
 }
 
-pub type StreamingChatCompletionResponse =
-    Pin<Box<dyn Stream<Item = Result<StreamingChatCompletionEvent, Error>>>>;
+pub type StreamingChatCompletionResponse<'a> =
+    Pin<Box<dyn 'a + Stream<Item = Result<StreamingChatCompletionEvent, Error>>>>;

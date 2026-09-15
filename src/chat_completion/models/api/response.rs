@@ -8,7 +8,7 @@ use crate::chat_completion::models::{
 };
 
 #[allow(clippy::large_enum_variant)]
-pub enum ChatCompletionResponse {
+pub enum ChatCompletionResponse<'a> {
     NonStreaming(NonStreamingChatCompletionResponse),
-    Streaming(StreamingChatCompletionResponse),
+    Streaming(StreamingChatCompletionResponse<'a>),
 }

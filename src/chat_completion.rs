@@ -15,11 +15,11 @@ pub mod non_streaming;
 pub mod streaming;
 pub use reqwest::IntoUrl;
 
-pub async fn chat_completion(
+pub async fn chat_completion<'a>(
     url: impl IntoUrl,
     body: impl Into<ChatCompletionRequestBody>,
     options: impl Into<Option<ChatCompletionOptions<'static>>>,
-) -> Result<ChatCompletionResponse, Error> {
+) -> Result<ChatCompletionResponse<'a>, Error> {
     match body.into() {
         ChatCompletionRequestBody::NonStreaming(body) => {
             non_streaming_chat_completion(url, body, options)
