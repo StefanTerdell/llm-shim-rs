@@ -14,6 +14,14 @@ pub struct ChatCompletionOptions<'a> {
     pub bearer_token: Option<Secret<String>>,
     pub tps_throttler: Option<&'a dyn TpsThrottler>,
     pub reasoning_content_remapping: Option<ReasoningContentRemappingConfig>,
+    pub output_token_counting: OutputTokenCounting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum OutputTokenCounting {
+    #[default]
+    Logprobs,
+    Estimate,
 }
 
 impl ChatCompletionOptions<'_> {
@@ -62,6 +70,14 @@ impl ChatCompletionOptions<'_> {
 
     pub fn without_remap_reasoning(mut self) -> Self {
         self.reasoning_content_remapping = None;
+        self
+    }
+
+    pub fn with_output_token_counting(
+        mut self,
+        output_token_counting: OutputTokenCounting,
+    ) -> Self {
+        self.output_token_counting = output_token_counting;
         self
     }
 }

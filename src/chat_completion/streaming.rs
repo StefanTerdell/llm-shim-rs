@@ -8,7 +8,7 @@ use crate::{
         },
         lib::{
             common::stats::{ChatCompletionChunkStats, ChatCompletionStats},
-            options::ChatCompletionOptions,
+            options::{ChatCompletionOptions, OutputTokenCounting},
             streaming::response::{StreamingChatCompletionEvent, StreamingChatCompletionResponse},
         },
     },
@@ -17,8 +17,8 @@ use crate::{
 };
 
 use async_stream::try_stream;
-use reqwest::IntoUrl;
-use reqwest_sse::{Event, EventSource};
+use eventsource_stream::{Event, Eventsource};
+use reqwest::{IntoUrl, header::CONTENT_TYPE};
 use std::time::{Duration, Instant};
 use stefans_utils::prelude::AsBool;
 use tokio::time::sleep;
@@ -31,18 +31,30 @@ pub async fn streaming_chat_completion<'a>(
 ) -> Result<StreamingChatCompletionResponse<'a>, Error> {
     let mut body = body.into();
 
-    let (client, bearer_token, tps_throttler, mut reasoning_content_remapping_state) =
-        match options.into() {
-            Some(options) => (
-                options.client.unwrap_or_default(),
-                options.bearer_token,
-                options.tps_throttler,
-                options
-                    .reasoning_content_remapping
-                    .map(|rcr| rcr.into_state()),
-            ),
-            None => (Default::default(), None, None, None),
-        };
+    let (
+        client,
+        bearer_token,
+        tps_throttler,
+        mut reasoning_content_remapping_state,
+        output_token_counting,
+    ) = match options.into() {
+        Some(options) => (
+            options.client.unwrap_or_default(),
+            options.bearer_token,
+            options.tps_throttler,
+            options
+                .reasoning_content_remapping
+                .map(|rcr| rcr.into_state()),
+            options.output_token_counting,
+        ),
+        None => (
+            Default::default(),
+            None,
+            None,
+            None,
+            OutputTokenCounting::default(),
+        ),
+    };
 
     let requested_logprobs = body.common.logprobs.as_bool();
     let requested_usage = body
@@ -50,7 +62,9 @@ pub async fn streaming_chat_completion<'a>(
         .as_ref()
         .is_some_and(|so| so.include_usage.as_bool());
 
-    body.common.logprobs = Some(true);
+    if output_token_counting == OutputTokenCounting::Logprobs {
+        body.common.logprobs = Some(true);
+    }
 
     match body.stream_options.as_mut() {
         Some(stream_options) => {
@@ -81,7 +95,29 @@ pub async fn streaming_chat_completion<'a>(
     };
 
     let mut instant_of_last_received_chunk = stats.requested;
-    let mut stream = request.send().await?.events().await?;
+    let response = request.send().await?;
+    let status = response.status();
+
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(Error::HttpStatus { status, body });
+    }
+
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    if !content_type
+        .as_deref()
+        .and_then(|ct| ct.split(';').next())
+        .is_some_and(|ct| ct.trim().eq_ignore_ascii_case("text/event-stream"))
+    {
+        return Err(Error::BadContentType(content_type));
+    }
+
+    let mut stream = response.bytes_stream().eventsource();
     let mut partial_buffer = None;
     let mut tps_correction_secs = 0.0;
 
@@ -96,11 +132,13 @@ pub async fn streaming_chat_completion<'a>(
                 data = format!("{previous}{data}");
             }
 
-            let Ok(mut chunk) =
-                serde_json::from_str::<StreamingChatCompletionChunk>(&data)
-            else {
-                partial_buffer = Some(data);
-                continue;
+            let mut chunk = match serde_json::from_str::<StreamingChatCompletionChunk>(&data) {
+                Ok(chunk) => chunk,
+                Err(e) if e.classify() == serde_json::error::Category::Eof => {
+                    partial_buffer = Some(data);
+                    continue;
+                }
+                Err(e) => Err(e)?,
             };
 
             if let Some(choices) = &mut chunk.choices {
@@ -121,8 +159,10 @@ pub async fn streaming_chat_completion<'a>(
                             choice.common.logprobs = Some(logprobs);
                         }
                     } else {
+                        let count = choice.delta.estimate_tokens();
                         stats.output_tokens_is_estimate = true;
-                        chunk_tokens += choice.delta.estimate_tokens();
+                        stats.output_tokens += count;
+                        chunk_tokens += count;
                     }
 
                     if let Some(rcr_state) = &mut reasoning_content_remapping_state {
@@ -144,6 +184,7 @@ pub async fn streaming_chat_completion<'a>(
                     let tps_correction_duration = Duration::from_secs_f32(tps_correction_secs);
                     sleep(tps_correction_duration).await;
                     chunk_duration += tps_correction_duration;
+                    instant_of_last_received_chunk = Instant::now();
 
                     tps_correction_secs = 0.0;
 

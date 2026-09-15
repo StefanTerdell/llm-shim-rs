@@ -27,10 +27,10 @@ use std::collections::HashMap;
 use stefans_utils::prelude::MapInto;
 use tokio_stream::StreamExt;
 
-pub async fn non_streaming_chat_completion(
+pub async fn non_streaming_chat_completion<'a>(
     url: impl IntoUrl,
     body: impl Into<NonStreamingChatCompletionRequestBody>,
-    options: impl Into<Option<ChatCompletionOptions<'static>>>,
+    options: impl Into<Option<ChatCompletionOptions<'a>>>,
 ) -> Result<NonStreamingChatCompletionResponse, Error> {
     let body = body.into();
     let model = body.common.model.clone();
