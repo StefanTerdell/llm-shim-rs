@@ -83,7 +83,6 @@ pub async fn streaming_chat_completion(
     let mut instant_of_last_received_chunk = stats.requested;
     let mut stream = request.send().await?.events().await?;
     let mut partial_buffer = None;
-    let throttle_key = tps_throttler.get_key().await;
     let mut tps_correction_secs = 0.0;
 
     Ok(Box::pin(try_stream! {
@@ -132,8 +131,7 @@ pub async fn streaming_chat_completion(
                 }
 
 
-                if let Some(key) = throttle_key.as_ref()
-                    && let Some(max_tps) = tps_throttler.get_max_tps(key).await
+                if let Some(max_tps) = tps_throttler.get_max_tps().await
                     && let chunk_tokens = chunk_tokens as f32
                     && let chunk_secs = chunk_duration.as_secs_f32()
                     && chunk_secs > 0.0

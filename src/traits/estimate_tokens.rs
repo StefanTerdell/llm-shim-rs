@@ -85,7 +85,7 @@ impl EstimateTokens for ChatCompletionRequestMessage {
         match &self.content {
             Some(ChatCompletionRequestMessageContent::Text(s)) => total + s.estimate_tokens(),
             Some(ChatCompletionRequestMessageContent::Parts(parts)) => {
-                parts.into_iter().fold(total, |total, part| {
+                parts.iter().fold(total, |total, part| {
                     total
                         + match part {
                             ChatCompletionRequestMessageContentPart::Text { text, .. } => {
