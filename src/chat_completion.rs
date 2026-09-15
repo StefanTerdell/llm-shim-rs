@@ -18,7 +18,7 @@ pub use reqwest::IntoUrl;
 pub async fn chat_completion(
     url: impl IntoUrl,
     body: impl Into<ChatCompletionRequestBody>,
-    options: impl Into<Option<ChatCompletionOptions>>,
+    options: impl Into<Option<ChatCompletionOptions<'static>>>,
 ) -> Result<ChatCompletionResponse, Error> {
     match body.into() {
         ChatCompletionRequestBody::NonStreaming(body) => {

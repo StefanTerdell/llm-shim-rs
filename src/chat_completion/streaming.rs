@@ -27,7 +27,7 @@ use tokio_stream::StreamExt;
 pub async fn streaming_chat_completion(
     url: impl IntoUrl,
     body: impl Into<StreamingChatCompletionRequestBody>,
-    options: impl Into<Option<ChatCompletionOptions>>,
+    options: impl Into<Option<ChatCompletionOptions<'static>>>,
 ) -> Result<StreamingChatCompletionResponse, Error> {
     let mut body = body.into();
 

@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use std::sync::Arc;
 
 #[async_trait]
 pub trait TpsThrottler: Send + Sync {
@@ -7,7 +6,7 @@ pub trait TpsThrottler: Send + Sync {
 }
 
 #[async_trait]
-impl<T: ?Sized + TpsThrottler> TpsThrottler for Option<Arc<T>> {
+impl TpsThrottler for Option<&dyn TpsThrottler> {
     async fn get_max_tps(&self) -> Option<f32> {
         if let Some(inner) = self {
             inner.get_max_tps().await

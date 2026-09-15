@@ -1,6 +1,6 @@
 use reqwest::Client;
-use std::{fmt::Display, sync::Arc};
-use stefans_utils::{as_arc::AsArc, prelude::AsClone, secret::Secret};
+use std::fmt::Display;
+use stefans_utils::{prelude::AsClone, secret::Secret};
 pub mod reasoning_content_remapping;
 
 use crate::{
@@ -9,14 +9,14 @@ use crate::{
 };
 
 #[derive(Default)]
-pub struct ChatCompletionOptions {
+pub struct ChatCompletionOptions<'a> {
     pub client: Option<Client>,
     pub bearer_token: Option<Secret<String>>,
-    pub tps_throttler: Option<Arc<dyn TpsThrottler>>,
+    pub tps_throttler: Option<&'a dyn TpsThrottler>,
     pub reasoning_content_remapping: Option<ReasoningContentRemappingConfig>,
 }
 
-impl ChatCompletionOptions {
+impl ChatCompletionOptions<'_> {
     pub fn with_client(mut self, client: impl AsClone<Client>) -> Self {
         self.client = Some(client.as_clone());
         self
@@ -37,12 +37,14 @@ impl ChatCompletionOptions {
         self
     }
 
-    pub fn with_tps_throttler<T: TpsThrottler + 'static>(
-        mut self,
-        tps_throttler: impl AsArc<T>,
-    ) -> Self {
-        self.tps_throttler = Some(tps_throttler.as_arc());
-        self
+    pub fn with_tps_throttler<'a>(
+        self,
+        tps_throttler: &'a dyn TpsThrottler,
+    ) -> ChatCompletionOptions<'a> {
+        ChatCompletionOptions {
+            tps_throttler: Some(tps_throttler),
+            ..self
+        }
     }
 
     pub fn without_tps_throttler(mut self) -> Self {

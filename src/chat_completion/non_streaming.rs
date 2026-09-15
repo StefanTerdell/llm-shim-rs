@@ -30,7 +30,7 @@ use tokio_stream::StreamExt;
 pub async fn non_streaming_chat_completion(
     url: impl IntoUrl,
     body: impl Into<NonStreamingChatCompletionRequestBody>,
-    options: impl Into<Option<ChatCompletionOptions>>,
+    options: impl Into<Option<ChatCompletionOptions<'static>>>,
 ) -> Result<NonStreamingChatCompletionResponse, Error> {
     let body = body.into();
     let model = body.common.model.clone();
