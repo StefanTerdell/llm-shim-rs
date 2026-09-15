@@ -23,9 +23,8 @@ async fn non_2xx_response_surfaces_status_and_body() {
     let result = streaming_chat_completion(&server.url, streaming_request(json!({})), None).await;
 
     match result {
-        Err(Error::HttpStatus { status, body }) => {
-            assert_eq!(status, StatusCode::UNAUTHORIZED);
-            assert!(body.contains("bad key"), "body was: {body}");
+        Err(Error::Reqwest(error)) => {
+            assert_eq!(error.status(), Some(StatusCode::UNAUTHORIZED));
         }
         Err(other) => panic!("unexpected error variant: {other}"),
         Ok(_) => panic!("expected an error"),

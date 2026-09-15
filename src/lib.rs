@@ -4,4 +4,8 @@ extern crate derive_aliases;
 
 pub mod chat_completion;
 pub mod error;
+pub mod messages;
+pub mod sse;
+pub mod stats;
+pub mod tps_throttler;
 pub mod traits;

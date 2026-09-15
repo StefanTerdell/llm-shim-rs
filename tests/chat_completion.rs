@@ -101,9 +101,7 @@ fn chunks(events: &[StreamingChatCompletionEvent]) -> Vec<&llm_stream_map::chat_
         .collect()
 }
 
-fn done_stats(
-    events: &[StreamingChatCompletionEvent],
-) -> &llm_stream_map::chat_completion::models::lib::common::stats::ChatCompletionStats {
+fn done_stats(events: &[StreamingChatCompletionEvent]) -> &llm_stream_map::stats::StreamStats {
     match events.last().unwrap() {
         StreamingChatCompletionEvent::Done { stats } => stats,
         _ => panic!("last event should be Done"),
@@ -341,16 +339,15 @@ mod throttling {
     use super::*;
     use async_trait::async_trait;
     use llm_stream_map::{
-        chat_completion::models::lib::options::ChatCompletionOptions,
-        traits::tps_throttler::TpsThrottler,
+        chat_completion::models::lib::options::ChatCompletionOptions, traits::max_tps::MaxTps,
     };
     use std::time::{Duration, Instant};
 
     struct FixedTps(f32);
 
     #[async_trait]
-    impl TpsThrottler for FixedTps {
-        async fn get_max_tps(&self) -> Option<f32> {
+    impl MaxTps for FixedTps {
+        async fn get(&self) -> Option<f32> {
             Some(self.0)
         }
     }
@@ -367,7 +364,7 @@ mod throttling {
         let server = MockSse::start(Script::sse(frames)).await;
 
         let throttler = FixedTps(MAX_TPS);
-        let options = ChatCompletionOptions::default().with_tps_throttler(&throttler);
+        let options = ChatCompletionOptions::default().with_max_tps(&throttler);
 
         let started = Instant::now();
         let mut stream =
@@ -411,7 +408,7 @@ mod throttling {
         let server = MockSse::start(Script::sse(frames)).await;
 
         let throttler = FixedTps(1000.0);
-        let options = ChatCompletionOptions::default().with_tps_throttler(&throttler);
+        let options = ChatCompletionOptions::default().with_max_tps(&throttler);
 
         let mut stream =
             streaming_chat_completion(&server.url, streaming_request(json!({})), options)

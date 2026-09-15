@@ -1,10 +1,18 @@
-use crate::chat_completion::models::api::{
-    common::CommonChatCompletionMessage,
-    request::common::{
-        ChatCompletionRequestMessage, ChatCompletionRequestMessageContent,
-        ChatCompletionRequestMessageContentPart, CommonChatCompletionRequestBody,
+use serde_json::Value;
+
+use crate::{
+    chat_completion::models::api::{
+        common::CommonChatCompletionMessage,
+        request::common::{
+            ChatCompletionRequestMessage, ChatCompletionRequestMessageContent,
+            ChatCompletionRequestMessageContentPart, CommonChatCompletionRequestBody,
+        },
+        response::common::ChatCompletionResponseMessage,
     },
-    response::common::ChatCompletionResponseMessage,
+    messages::models::api::{
+        common::{ContentBlock, ContentBlockDelta},
+        request::common::{CommonMessagesRequestBody, MessageContent, MessageParam},
+    },
 };
 
 pub trait EstimateTokens {
@@ -96,6 +104,74 @@ impl EstimateTokens for ChatCompletionRequestMessage {
                 })
             }
             None => total, // e.g. assistant turn that only carries tool_calls
+        }
+    }
+}
+
+impl EstimateTokens for CommonMessagesRequestBody {
+    fn estimate_tokens(&self) -> u32 {
+        const PRIMING_OVERHEAD: u32 = 3;
+
+        let mut total = PRIMING_OVERHEAD;
+
+        if let Some(system) = &self.system {
+            total += system.estimate_tokens();
+        }
+
+        for message in &self.messages {
+            total += message.estimate_tokens();
+        }
+
+        total
+    }
+}
+
+impl EstimateTokens for MessageParam {
+    fn estimate_tokens(&self) -> u32 {
+        const PER_MESSAGE_OVERHEAD: u32 = 4;
+
+        PER_MESSAGE_OVERHEAD + self.role.estimate_tokens() + self.content.estimate_tokens()
+    }
+}
+
+impl EstimateTokens for MessageContent {
+    fn estimate_tokens(&self) -> u32 {
+        match self {
+            MessageContent::Text(text) => text.estimate_tokens(),
+            MessageContent::Blocks(blocks) => blocks.iter().map(|b| b.estimate_tokens()).sum(),
+        }
+    }
+}
+
+impl EstimateTokens for ContentBlock {
+    fn estimate_tokens(&self) -> u32 {
+        const IMAGE_TOKENS: u32 = 1200;
+
+        match self {
+            ContentBlock::Text { text, .. } => text.estimate_tokens(),
+            ContentBlock::Thinking { thinking, .. } => thinking.estimate_tokens(),
+            ContentBlock::RedactedThinking { data, .. } => data.estimate_tokens(),
+            ContentBlock::ToolUse { name, input, .. } => {
+                name.estimate_tokens() + input.to_string().estimate_tokens() + 4
+            }
+            ContentBlock::Other(value) => match value.get("type").and_then(Value::as_str) {
+                Some("image") | Some("document") => IMAGE_TOKENS,
+                _ => value.to_string().estimate_tokens(),
+            },
+        }
+    }
+}
+
+impl EstimateTokens for ContentBlockDelta {
+    fn estimate_tokens(&self) -> u32 {
+        match self {
+            ContentBlockDelta::TextDelta { text, .. } => text.estimate_tokens(),
+            ContentBlockDelta::ThinkingDelta { thinking, .. } => thinking.estimate_tokens(),
+            ContentBlockDelta::InputJsonDelta { partial_json, .. } => {
+                partial_json.estimate_tokens()
+            }
+            ContentBlockDelta::SignatureDelta { .. } => 0,
+            ContentBlockDelta::Other(_) => 0,
         }
     }
 }

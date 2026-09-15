@@ -3,12 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{chat_completion::models::api::common::ChatCompletionUsage, traits::or_add::OrAdd};
+use crate::traits::or_add::OrAdd;
 
 #[derive(Debug, Clone)]
-pub struct ChatCompletionStats {
+pub struct StreamStats {
     pub requested: Instant,
-    pub chunks: Vec<ChatCompletionChunkStats>,
+    pub chunks: Vec<ChunkStats>,
     pub input_tokens_is_estimate: bool,
     pub input_tokens: u32,
     pub output_tokens_is_estimate: bool,
@@ -16,9 +16,17 @@ pub struct ChatCompletionStats {
     pub error: Option<String>,
 }
 
-impl ChatCompletionStats {
-    pub fn as_usage(self) -> ChatCompletionUsage {
-        (&self).into()
+impl StreamStats {
+    pub fn new(requested: Instant, input_tokens_estimate: u32) -> Self {
+        Self {
+            requested,
+            chunks: Default::default(),
+            input_tokens_is_estimate: true,
+            input_tokens: input_tokens_estimate,
+            output_tokens_is_estimate: true,
+            output_tokens: 0,
+            error: None,
+        }
     }
 
     pub fn latency(&self) -> Option<Duration> {
@@ -32,7 +40,7 @@ impl ChatCompletionStats {
             Some(
                 self.chunks
                     .iter()
-                    .fold(ChatCompletionChunkStats::default(), |p, c| p + *c)
+                    .fold(ChunkStats::default(), |p, c| p + *c)
                     .tps(),
             )
         }
@@ -40,13 +48,13 @@ impl ChatCompletionStats {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ChatCompletionChunkStats {
+pub struct ChunkStats {
     pub duration: Duration,
     pub tokens: u32,
     pub tps_correction_duration: Option<Duration>,
 }
 
-impl ChatCompletionChunkStats {
+impl ChunkStats {
     pub fn tps(&self) -> f32 {
         let secs = self.duration.as_secs_f32();
 
@@ -58,7 +66,7 @@ impl ChatCompletionChunkStats {
     }
 }
 
-impl Add for ChatCompletionChunkStats {
+impl Add for ChunkStats {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {

@@ -10,7 +10,7 @@ use axum::{
     Router,
     body::{Body, Bytes},
     extract::State,
-    http::{HeaderValue, StatusCode, header::CONTENT_TYPE},
+    http::{HeaderMap, HeaderValue, StatusCode, header::CONTENT_TYPE},
     response::Response,
     routing::post,
 };
@@ -81,12 +81,13 @@ impl Script {
 #[derive(Clone)]
 struct AppState {
     script: Arc<Script>,
-    requests: Arc<Mutex<Vec<Value>>>,
+    requests: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
 }
 
 pub struct MockSse {
     pub url: String,
-    requests: Arc<Mutex<Vec<Value>>>,
+    pub messages_url: String,
+    requests: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
     _server: JoinHandle<()>,
 }
 
@@ -100,6 +101,7 @@ impl MockSse {
 
         let app = Router::new()
             .route("/v1/chat/completions", post(handler))
+            .route("/v1/messages", post(handler))
             .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -110,6 +112,7 @@ impl MockSse {
 
         Self {
             url: format!("http://{addr}/v1/chat/completions"),
+            messages_url: format!("http://{addr}/v1/messages"),
             requests,
             _server: server,
         }
@@ -117,13 +120,24 @@ impl MockSse {
 
     /// Request bodies received so far, parsed as JSON.
     pub fn requests(&self) -> Vec<Value> {
-        self.requests.lock().unwrap().clone()
+        self.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, body)| body.clone())
+            .collect()
     }
 
     pub fn single_request(&self) -> Value {
         let requests = self.requests();
         assert_eq!(requests.len(), 1, "expected exactly one request");
         requests.into_iter().next().unwrap()
+    }
+
+    pub fn single_request_headers(&self) -> HeaderMap {
+        let requests = self.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1, "expected exactly one request");
+        requests[0].0.clone()
     }
 }
 
@@ -133,9 +147,9 @@ impl Drop for MockSse {
     }
 }
 
-async fn handler(State(state): State<AppState>, body: Bytes) -> Response {
+async fn handler(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     let json = serde_json::from_slice::<Value>(&body).expect("request body must be JSON");
-    state.requests.lock().unwrap().push(json);
+    state.requests.lock().unwrap().push((headers, json));
 
     let frames = state.script.frames.clone();
     let stream = async_stream::stream! {
@@ -175,4 +189,106 @@ pub fn streaming_request(
 /// A content delta chunk for one choice.
 pub fn delta(index: u32, content: &str) -> Value {
     serde_json::json!({"choices": [{"index": index, "delta": {"role": "assistant", "content": content}}]})
+}
+
+pub mod anthropic {
+    use super::*;
+
+    pub fn request(
+        extra: Value,
+    ) -> llm_stream_map::messages::models::api::request::streaming::StreamingMessagesRequestBody
+    {
+        let mut body = serde_json::json!({
+            "model": "test-model",
+            "max_tokens": 64,
+            "stream": true,
+            "messages": [{"role": "user", "content": "hello"}],
+        });
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().cloned().unwrap_or_default());
+        serde_json::from_value(body).unwrap()
+    }
+
+    pub fn non_streaming_request() -> llm_stream_map::messages::models::api::request::non_streaming::NonStreamingMessagesRequestBody{
+        serde_json::from_value(serde_json::json!({
+            "model": "test-model",
+            "max_tokens": 64,
+            "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap()
+    }
+
+    /// `event: <type>\ndata: <json>\n\n`, as Anthropic sends it.
+    pub fn event(json: Value) -> Frame {
+        let event_type = json["type"]
+            .as_str()
+            .expect("event needs a type")
+            .to_owned();
+        raw(format!("event: {event_type}\ndata: {json}\n\n"))
+    }
+
+    pub fn message_start(input_tokens: u32) -> Value {
+        serde_json::json!({"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "test-model", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": input_tokens, "output_tokens": 1}}})
+    }
+
+    pub fn text_start(index: u32) -> Value {
+        serde_json::json!({"type": "content_block_start", "index": index, "content_block": {"type": "text", "text": ""}})
+    }
+
+    pub fn text_delta(index: u32, text: &str) -> Value {
+        serde_json::json!({"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}})
+    }
+
+    pub fn thinking_start(index: u32) -> Value {
+        serde_json::json!({"type": "content_block_start", "index": index, "content_block": {"type": "thinking", "thinking": "", "signature": ""}})
+    }
+
+    pub fn thinking_delta(index: u32, thinking: &str) -> Value {
+        serde_json::json!({"type": "content_block_delta", "index": index, "delta": {"type": "thinking_delta", "thinking": thinking}})
+    }
+
+    pub fn signature_delta(index: u32, signature: &str) -> Value {
+        serde_json::json!({"type": "content_block_delta", "index": index, "delta": {"type": "signature_delta", "signature": signature}})
+    }
+
+    pub fn tool_use_start(index: u32, id: &str, name: &str) -> Value {
+        serde_json::json!({"type": "content_block_start", "index": index, "content_block": {"type": "tool_use", "id": id, "name": name, "input": {}}})
+    }
+
+    pub fn input_json_delta(index: u32, partial_json: &str) -> Value {
+        serde_json::json!({"type": "content_block_delta", "index": index, "delta": {"type": "input_json_delta", "partial_json": partial_json}})
+    }
+
+    pub fn block_stop(index: u32) -> Value {
+        serde_json::json!({"type": "content_block_stop", "index": index})
+    }
+
+    pub fn message_delta(stop_reason: &str, output_tokens: u32) -> Value {
+        serde_json::json!({"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": null}, "usage": {"output_tokens": output_tokens}})
+    }
+
+    pub fn message_stop() -> Value {
+        serde_json::json!({"type": "message_stop"})
+    }
+
+    pub fn ping() -> Value {
+        serde_json::json!({"type": "ping"})
+    }
+
+    /// A complete plain text reply as Anthropic would stream it.
+    pub fn simple_text_script(
+        text_chunks: &[&str],
+        input_tokens: u32,
+        output_tokens: u32,
+    ) -> Script {
+        let mut frames = vec![event(message_start(input_tokens)), event(text_start(0))];
+        frames.extend(text_chunks.iter().map(|t| event(text_delta(0, t))));
+        frames.extend([
+            event(block_stop(0)),
+            event(message_delta("end_turn", output_tokens)),
+            event(message_stop()),
+        ]);
+        Script::sse(frames)
+    }
 }

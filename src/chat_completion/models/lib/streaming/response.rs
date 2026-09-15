@@ -1,9 +1,6 @@
 use crate::{
-    chat_completion::models::{
-        api::response::streaming::StreamingChatCompletionChunk,
-        lib::common::stats::ChatCompletionStats,
-    },
-    error::Error,
+    chat_completion::models::api::response::streaming::StreamingChatCompletionChunk, error::Error,
+    stats::StreamStats,
 };
 
 use std::pin::Pin;
@@ -11,13 +8,13 @@ use tokio_stream::Stream;
 
 pub enum StreamingChatCompletionEvent {
     Done {
-        stats: ChatCompletionStats,
+        stats: StreamStats,
     },
     Chunk {
         chunk: StreamingChatCompletionChunk,
     },
     ChunkError {
-        stats: ChatCompletionStats,
+        stats: StreamStats,
         chunk: StreamingChatCompletionChunk,
     },
 }

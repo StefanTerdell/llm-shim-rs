@@ -7,21 +7,21 @@ use crate::{
             response::streaming::StreamingChatCompletionChunk,
         },
         lib::{
-            common::stats::{ChatCompletionChunkStats, ChatCompletionStats},
             options::{ChatCompletionOptions, OutputTokenCounting},
             streaming::response::{StreamingChatCompletionEvent, StreamingChatCompletionResponse},
         },
     },
     error::Error,
-    traits::{estimate_tokens::EstimateTokens, tps_throttler::TpsThrottler},
+    sse::{self, Event, JsonFrameBuffer},
+    stats::StreamStats,
+    tps_throttler::TpsThrottler,
+    traits::estimate_tokens::EstimateTokens,
 };
 
 use async_stream::try_stream;
-use eventsource_stream::{Event, Eventsource};
-use reqwest::{IntoUrl, header::CONTENT_TYPE};
-use std::time::{Duration, Instant};
+use reqwest::IntoUrl;
+use std::time::Instant;
 use stefans_utils::prelude::AsBool;
-use tokio::time::sleep;
 use tokio_stream::StreamExt;
 
 pub async fn streaming_chat_completion<'a>(
@@ -34,14 +34,14 @@ pub async fn streaming_chat_completion<'a>(
     let (
         client,
         bearer_token,
-        tps_throttler,
+        max_tps,
         mut reasoning_content_remapping_state,
         output_token_counting,
     ) = match options.into() {
         Some(options) => (
             options.client.unwrap_or_default(),
             options.bearer_token,
-            options.tps_throttler,
+            options.max_tps,
             options
                 .reasoning_content_remapping
                 .map(|rcr| rcr.into_state()),
@@ -84,68 +84,23 @@ pub async fn streaming_chat_completion<'a>(
         request = request.bearer_auth(secret.expose())
     };
 
-    let mut stats = ChatCompletionStats {
-        requested: Instant::now(),
-        chunks: Default::default(),
-        input_tokens_is_estimate: true,
-        input_tokens: body.common.estimate_tokens(),
-        output_tokens_is_estimate: true,
-        output_tokens: 0,
-        error: None,
-    };
-
-    let mut instant_of_last_received_chunk = stats.requested;
-    let response = request.send().await?;
-    let status = response.status();
-
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(Error::HttpStatus { status, body });
-    }
-
-    let content_type = response
-        .headers()
-        .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned);
-
-    if !content_type
-        .as_deref()
-        .and_then(|ct| ct.split(';').next())
-        .is_some_and(|ct| ct.trim().eq_ignore_ascii_case("text/event-stream"))
-    {
-        return Err(Error::BadContentType(content_type));
-    }
-
-    let mut stream = response.bytes_stream().eventsource();
-    let mut partial_buffer = None;
-    let mut tps_correction_secs = 0.0;
+    let mut stats = StreamStats::new(Instant::now(), body.common.estimate_tokens());
+    let mut pacer = TpsThrottler::new(max_tps, stats.requested);
+    let mut stream = sse::send(request).await?;
+    let mut frames = JsonFrameBuffer::default();
 
     Ok(Box::pin(try_stream! {
-        while let Some(Event { mut data, .. }) = stream.next().await.transpose()? {
+        while let Some(Event { data, .. }) = stream.next().await.transpose()? {
             if data == "[DONE]" {
                 yield StreamingChatCompletionEvent::Done { stats };
                 break;
             }
 
-            if let Some(previous) = partial_buffer.take() {
-                data = format!("{previous}{data}");
-            }
-
-            let mut chunk = match serde_json::from_str::<StreamingChatCompletionChunk>(&data) {
-                Ok(chunk) => chunk,
-                Err(e) if e.classify() == serde_json::error::Category::Eof => {
-                    partial_buffer = Some(data);
-                    continue;
-                }
-                Err(e) => Err(e)?,
+            let Some(mut chunk) = frames.push::<StreamingChatCompletionChunk>(data)? else {
+                continue;
             };
 
             if let Some(choices) = &mut chunk.choices {
-                let now = Instant::now();
-                let mut chunk_duration = now - instant_of_last_received_chunk;
-                instant_of_last_received_chunk = now;
-
                 let mut chunk_tokens = 0;
 
                 for choice in choices {
@@ -170,33 +125,7 @@ pub async fn streaming_chat_completion<'a>(
                     }
                 }
 
-
-                if let Some(max_tps) = tps_throttler.get_max_tps().await
-                    && let chunk_tokens = chunk_tokens as f32
-                    && let chunk_secs = chunk_duration.as_secs_f32()
-                    && chunk_secs > 0.0
-                    && chunk_tokens / chunk_secs > max_tps {
-                        tps_correction_secs += chunk_tokens / max_tps - chunk_secs;
-                }
-
-
-                let chunk_tps_correction = if tps_correction_secs > 0.0 {
-                    let tps_correction_duration = Duration::from_secs_f32(tps_correction_secs);
-                    sleep(tps_correction_duration).await;
-                    chunk_duration += tps_correction_duration;
-                    instant_of_last_received_chunk = Instant::now();
-
-                    tps_correction_secs = 0.0;
-
-                    Some(tps_correction_duration)
-                } else {
-                    None
-                };
-
-                let chunk_stats = ChatCompletionChunkStats { duration: chunk_duration, tokens: chunk_tokens, tps_correction_duration: chunk_tps_correction };
-
-                stats.chunks
-                    .push(chunk_stats)
+                stats.chunks.push(pacer.pace(chunk_tokens).await);
             }
 
             if let Some(usage) = chunk.usage.take() {

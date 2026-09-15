@@ -1,6 +1,4 @@
-use crate::{
-    chat_completion::models::lib::common::stats::ChatCompletionStats, traits::or_merge::OrMerge,
-};
+use crate::{stats::StreamStats, traits::or_merge::OrMerge};
 
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -63,8 +61,8 @@ pub struct ChatCompletionUsage {
     additional_properties: IndexMap<String, Value>,
 }
 
-impl From<&ChatCompletionStats> for ChatCompletionUsage {
-    fn from(value: &ChatCompletionStats) -> Self {
+impl From<&StreamStats> for ChatCompletionUsage {
+    fn from(value: &StreamStats) -> Self {
         Self {
             completion_tokens: value.output_tokens,
             prompt_tokens: value.input_tokens,

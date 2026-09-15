@@ -5,14 +5,14 @@ pub mod reasoning_content_remapping;
 
 use crate::{
     chat_completion::models::lib::options::reasoning_content_remapping::ReasoningContentRemappingConfig,
-    traits::tps_throttler::TpsThrottler,
+    traits::max_tps::MaxTps,
 };
 
 #[derive(Default)]
 pub struct ChatCompletionOptions<'a> {
     pub client: Option<Client>,
     pub bearer_token: Option<Secret<String>>,
-    pub tps_throttler: Option<&'a dyn TpsThrottler>,
+    pub max_tps: Option<&'a dyn MaxTps>,
     pub reasoning_content_remapping: Option<ReasoningContentRemappingConfig>,
     pub output_token_counting: OutputTokenCounting,
 }
@@ -45,18 +45,15 @@ impl ChatCompletionOptions<'_> {
         self
     }
 
-    pub fn with_tps_throttler<'a>(
-        self,
-        tps_throttler: &'a dyn TpsThrottler,
-    ) -> ChatCompletionOptions<'a> {
+    pub fn with_max_tps<'a>(self, tps_throttler: &'a dyn MaxTps) -> ChatCompletionOptions<'a> {
         ChatCompletionOptions {
-            tps_throttler: Some(tps_throttler),
+            max_tps: Some(tps_throttler),
             ..self
         }
     }
 
-    pub fn without_tps_throttler(mut self) -> Self {
-        self.tps_throttler = None;
+    pub fn without_max_tps(mut self) -> Self {
+        self.max_tps = None;
         self
     }
 

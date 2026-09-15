@@ -10,7 +10,7 @@ use llm_stream_map::{
         },
         streaming::streaming_chat_completion,
     },
-    traits::tps_throttler::TpsThrottler,
+    traits::max_tps::MaxTps,
 };
 use serde_json::json;
 use support::*;
@@ -19,8 +19,8 @@ use tokio_stream::StreamExt;
 struct FixedTps(f32);
 
 #[async_trait]
-impl TpsThrottler for FixedTps {
-    async fn get_max_tps(&self) -> Option<f32> {
+impl MaxTps for FixedTps {
+    async fn get(&self) -> Option<f32> {
         Some(self.0)
     }
 }
@@ -29,7 +29,7 @@ impl TpsThrottler for FixedTps {
 async fn top_level_chat_completion_accepts_a_borrowed_throttler() {
     let server = MockSse::start(Script::sse([data(delta(0, "hi")), done()])).await;
     let throttler = FixedTps(1000.0);
-    let options = ChatCompletionOptions::default().with_tps_throttler(&throttler);
+    let options = ChatCompletionOptions::default().with_max_tps(&throttler);
 
     let response = chat_completion(&server.url, streaming_request(json!({})), options)
         .await

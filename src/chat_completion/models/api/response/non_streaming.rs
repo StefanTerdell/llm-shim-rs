@@ -1,24 +1,22 @@
 use crate::{
-    chat_completion::models::{
-        api::{
-            common::ChatCompletionUsage,
-            response::{
-                common::{ChatCompletionResponseMessage, CommonChatCompletionChoice},
-                streaming::StreamingChatCompletionChoice,
-            },
+    chat_completion::models::api::{
+        common::ChatCompletionUsage,
+        response::{
+            common::{ChatCompletionResponseMessage, CommonChatCompletionChoice},
+            streaming::StreamingChatCompletionChoice,
         },
-        lib::common::stats::ChatCompletionStats,
     },
     traits::reasoning_content_remapping::ReasoningContentRemappingTarget,
 };
 
+use crate::stats::StreamStats;
 use serde_json::Value;
 use std::ops::Add;
 use stefans_utils::literal_str;
 
 pub struct NonStreamingChatCompletionResponse {
     pub body: NonStreamingChatCompletionResponseBody,
-    pub stats: Option<ChatCompletionStats>,
+    pub stats: Option<StreamStats>,
     pub error: Option<Value>,
 }
 

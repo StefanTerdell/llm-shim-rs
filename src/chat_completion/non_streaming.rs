@@ -10,13 +10,13 @@ use crate::{
                 },
             },
             lib::{
-                common::stats::ChatCompletionStats, options::ChatCompletionOptions,
-                streaming::response::StreamingChatCompletionEvent,
+                options::ChatCompletionOptions, streaming::response::StreamingChatCompletionEvent,
             },
         },
         streaming::streaming_chat_completion,
     },
     error::Error,
+    stats::StreamStats,
     traits::estimate_tokens::EstimateTokens,
 };
 
@@ -42,7 +42,7 @@ pub async fn non_streaming_chat_completion<'a>(
     struct Acc {
         choices: HashMap<u32, NonStreamingChatCompletionChoice>,
         usage: Option<ChatCompletionUsage>,
-        stats: Option<ChatCompletionStats>,
+        stats: Option<StreamStats>,
         error: Option<Value>,
     }
 

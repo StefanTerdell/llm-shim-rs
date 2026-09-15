@@ -14,8 +14,4 @@ pub enum Error {
     EventStream(#[from] EventStreamError<ReqwestError>),
     #[error(transparent)]
     UrlParse(#[from] UrlParseError),
-    #[error("http status {status}: {body}")]
-    HttpStatus { status: StatusCode, body: String },
-    #[error("expected content-type text/event-stream, got {0:?}")]
-    BadContentType(Option<String>),
 }
