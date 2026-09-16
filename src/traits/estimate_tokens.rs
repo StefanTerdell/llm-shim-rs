@@ -13,6 +13,10 @@ use crate::{
         common::{ContentBlock, ContentBlockDelta},
         request::common::{CommonMessagesRequestBody, MessageContent, MessageParam},
     },
+    responses::models::api::{
+        common::{ContentPart, OutputItem, ReasoningPart},
+        request::common::{CommonResponsesRequestBody, ResponsesInput},
+    },
 };
 
 pub trait EstimateTokens {
@@ -173,5 +177,68 @@ impl EstimateTokens for ContentBlockDelta {
             ContentBlockDelta::SignatureDelta { .. } => 0,
             ContentBlockDelta::Other(_) => 0,
         }
+    }
+}
+
+impl EstimateTokens for CommonResponsesRequestBody {
+    fn estimate_tokens(&self) -> u32 {
+        const PRIMING_OVERHEAD: u32 = 3;
+
+        let mut total = PRIMING_OVERHEAD;
+
+        if let Some(instructions) = &self.instructions {
+            total += instructions.estimate_tokens() + 4;
+        }
+
+        total += match &self.input {
+            ResponsesInput::Text(text) => text.estimate_tokens() + 4,
+            ResponsesInput::Items(items) => items
+                .iter()
+                .map(|item| item.to_string().estimate_tokens() + 4)
+                .sum(),
+        };
+
+        total
+    }
+}
+
+impl EstimateTokens for OutputItem {
+    fn estimate_tokens(&self) -> u32 {
+        match self {
+            OutputItem::Message { content, .. } => {
+                content.iter().map(EstimateTokens::estimate_tokens).sum()
+            }
+            OutputItem::Reasoning {
+                summary, content, ..
+            } => summary
+                .iter()
+                .chain(content.iter().flatten())
+                .map(EstimateTokens::estimate_tokens)
+                .sum(),
+            OutputItem::FunctionCall {
+                name, arguments, ..
+            } => name.estimate_tokens() + arguments.estimate_tokens(),
+            OutputItem::Other(_) => 0,
+        }
+    }
+}
+
+impl EstimateTokens for ContentPart {
+    fn estimate_tokens(&self) -> u32 {
+        match self {
+            ContentPart::OutputText { text, .. } | ContentPart::ReasoningText { text, .. } => {
+                text.estimate_tokens()
+            }
+            ContentPart::Refusal { refusal, .. } => refusal.estimate_tokens(),
+            ContentPart::Other(_) => 0,
+        }
+    }
+}
+
+impl EstimateTokens for ReasoningPart {
+    fn estimate_tokens(&self) -> u32 {
+        self.text()
+            .map(EstimateTokens::estimate_tokens)
+            .unwrap_or(0)
     }
 }

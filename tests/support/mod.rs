@@ -87,6 +87,7 @@ struct AppState {
 pub struct MockSse {
     pub url: String,
     pub messages_url: String,
+    pub responses_url: String,
     requests: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
     _server: JoinHandle<()>,
 }
@@ -102,6 +103,7 @@ impl MockSse {
         let app = Router::new()
             .route("/v1/chat/completions", post(handler))
             .route("/v1/messages", post(handler))
+            .route("/v1/responses", post(handler))
             .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -113,6 +115,7 @@ impl MockSse {
         Self {
             url: format!("http://{addr}/v1/chat/completions"),
             messages_url: format!("http://{addr}/v1/messages"),
+            responses_url: format!("http://{addr}/v1/responses"),
             requests,
             _server: server,
         }
@@ -288,6 +291,144 @@ pub mod anthropic {
             event(block_stop(0)),
             event(message_delta("end_turn", output_tokens)),
             event(message_stop()),
+        ]);
+        Script::sse(frames)
+    }
+}
+
+pub mod openai_responses {
+    use super::*;
+
+    pub fn request(
+        extra: Value,
+    ) -> llm_stream_map::responses::models::api::request::streaming::StreamingResponsesRequestBody
+    {
+        let mut body = serde_json::json!({"model": "test-model", "stream": true, "input": "hello"});
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().cloned().unwrap_or_default());
+        serde_json::from_value(body).unwrap()
+    }
+
+    pub fn non_streaming_request() -> llm_stream_map::responses::models::api::request::non_streaming::NonStreamingResponsesRequestBody{
+        serde_json::from_value(serde_json::json!({"model": "test-model", "input": "hello"}))
+            .unwrap()
+    }
+
+    /// `event: <type>\ndata: <json>\n\n`, as OpenAI sends it.
+    pub fn event(json: Value) -> Frame {
+        let event_type = json["type"]
+            .as_str()
+            .expect("event needs a type")
+            .to_owned();
+        raw(format!("event: {event_type}\ndata: {json}\n\n"))
+    }
+
+    pub fn response_object(status: &str, output: Value, usage: Option<(u32, u32)>) -> Value {
+        let mut r = serde_json::json!({"id": "resp_1", "object": "response", "created_at": 1, "status": status, "model": "test-model", "output": output});
+        if let Some((input, output)) = usage {
+            r["usage"] = serde_json::json!({"input_tokens": input, "output_tokens": output, "total_tokens": input + output, "output_tokens_details": {"reasoning_tokens": 0}});
+        }
+        r
+    }
+
+    pub fn created() -> Value {
+        serde_json::json!({"type": "response.created", "sequence_number": 0, "response": response_object("in_progress", serde_json::json!([]), None)})
+    }
+
+    pub fn completed(output: Value, input_tokens: u32, output_tokens: u32) -> Value {
+        serde_json::json!({"type": "response.completed", "sequence_number": 99, "response": response_object("completed", output, Some((input_tokens, output_tokens)))})
+    }
+
+    pub fn message_item(id: &str, text: &str, status: &str) -> Value {
+        let content = if text.is_empty() {
+            serde_json::json!([])
+        } else {
+            serde_json::json!([{"type": "output_text", "text": text, "annotations": []}])
+        };
+        serde_json::json!({"type": "message", "id": id, "status": status, "role": "assistant", "content": content})
+    }
+
+    pub fn reasoning_item(id: &str, summaries: &[&str]) -> Value {
+        let summary: Vec<Value> = summaries
+            .iter()
+            .map(|s| serde_json::json!({"type": "summary_text", "text": s}))
+            .collect();
+        serde_json::json!({"type": "reasoning", "id": id, "summary": summary})
+    }
+
+    pub fn item_added(output_index: u32, item: Value) -> Value {
+        serde_json::json!({"type": "response.output_item.added", "output_index": output_index, "item": item, "sequence_number": 1})
+    }
+
+    pub fn item_done(output_index: u32, item: Value) -> Value {
+        serde_json::json!({"type": "response.output_item.done", "output_index": output_index, "item": item, "sequence_number": 1})
+    }
+
+    pub fn part_added(item_id: &str, output_index: u32, content_index: u32) -> Value {
+        serde_json::json!({"type": "response.content_part.added", "item_id": item_id, "output_index": output_index, "content_index": content_index, "part": {"type": "output_text", "text": "", "annotations": []}, "sequence_number": 1})
+    }
+
+    pub fn part_done(item_id: &str, output_index: u32, content_index: u32, text: &str) -> Value {
+        serde_json::json!({"type": "response.content_part.done", "item_id": item_id, "output_index": output_index, "content_index": content_index, "part": {"type": "output_text", "text": text, "annotations": []}, "sequence_number": 1})
+    }
+
+    pub fn text_delta(item_id: &str, output_index: u32, delta: &str) -> Value {
+        serde_json::json!({"type": "response.output_text.delta", "item_id": item_id, "output_index": output_index, "content_index": 0, "delta": delta, "logprobs": [], "sequence_number": 1})
+    }
+
+    pub fn text_done(item_id: &str, output_index: u32, text: &str) -> Value {
+        serde_json::json!({"type": "response.output_text.done", "item_id": item_id, "output_index": output_index, "content_index": 0, "text": text, "logprobs": [], "sequence_number": 1})
+    }
+
+    pub fn summary_part_added(item_id: &str, output_index: u32, summary_index: u32) -> Value {
+        serde_json::json!({"type": "response.reasoning_summary_part.added", "item_id": item_id, "output_index": output_index, "summary_index": summary_index, "part": {"type": "summary_text", "text": ""}, "sequence_number": 1})
+    }
+
+    pub fn summary_part_done(
+        item_id: &str,
+        output_index: u32,
+        summary_index: u32,
+        text: &str,
+    ) -> Value {
+        serde_json::json!({"type": "response.reasoning_summary_part.done", "item_id": item_id, "output_index": output_index, "summary_index": summary_index, "part": {"type": "summary_text", "text": text}, "sequence_number": 1})
+    }
+
+    pub fn summary_delta(
+        item_id: &str,
+        output_index: u32,
+        summary_index: u32,
+        delta: &str,
+    ) -> Value {
+        serde_json::json!({"type": "response.reasoning_summary_text.delta", "item_id": item_id, "output_index": output_index, "summary_index": summary_index, "delta": delta, "sequence_number": 1})
+    }
+
+    pub fn summary_done(item_id: &str, output_index: u32, summary_index: u32, text: &str) -> Value {
+        serde_json::json!({"type": "response.reasoning_summary_text.done", "item_id": item_id, "output_index": output_index, "summary_index": summary_index, "text": text, "sequence_number": 1})
+    }
+
+    pub fn reasoning_text_delta(item_id: &str, output_index: u32, delta: &str) -> Value {
+        serde_json::json!({"type": "response.reasoning_text.delta", "item_id": item_id, "output_index": output_index, "content_index": 0, "delta": delta, "sequence_number": 1})
+    }
+
+    /// A complete plain text reply as OpenAI would stream it.
+    pub fn simple_text_script(chunks: &[&str], input_tokens: u32, output_tokens: u32) -> Script {
+        let text: String = chunks.concat();
+        let mut frames = vec![
+            event(created()),
+            event(item_added(0, message_item("msg_1", "", "in_progress"))),
+            event(part_added("msg_1", 0, 0)),
+        ];
+        frames.extend(chunks.iter().map(|c| event(text_delta("msg_1", 0, c))));
+        frames.extend([
+            event(text_done("msg_1", 0, &text)),
+            event(part_done("msg_1", 0, 0, &text)),
+            event(item_done(0, message_item("msg_1", &text, "completed"))),
+            event(completed(
+                serde_json::json!([message_item("msg_1", &text, "completed")]),
+                input_tokens,
+                output_tokens,
+            )),
         ]);
         Script::sse(frames)
     }
