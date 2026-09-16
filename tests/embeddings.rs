@@ -5,10 +5,7 @@ use llm_stream_map::{
     embeddings::{
         embeddings,
         models::{
-            api::{
-                request::{EmbeddingsInput, EmbeddingsRequestBody},
-                response::Embedding,
-            },
+            api::request::{EmbeddingsInput, EmbeddingsRequestBody},
             lib::options::EmbeddingsOptions,
         },
     },
@@ -27,7 +24,7 @@ fn request(input: serde_json::Value) -> EmbeddingsRequestBody {
     serde_json::from_value(json!({"model": "embed-model", "input": input})).unwrap()
 }
 
-fn response(vectors: &[Vec<f32>], prompt_tokens: u32) -> serde_json::Value {
+fn response(vectors: &[Vec<f64>], prompt_tokens: u32) -> serde_json::Value {
     let data: Vec<_> = vectors
         .iter()
         .enumerate()
@@ -63,13 +60,16 @@ async fn parses_vectors_and_reports_exact_input_tokens() {
         .await
         .unwrap();
 
-    assert_eq!(result.body.data.len(), 2);
-    assert_eq!(result.body.data[1].index, 1);
+    let data = result.body.additional_properties["data"]
+        .as_array()
+        .unwrap();
+    assert_eq!(data.len(), 2);
+    assert_eq!(data[1]["index"], json!(1));
+    assert_eq!(data[1]["embedding"], json!([0.3, 0.4]));
     assert_eq!(
-        result.body.data[1].embedding,
-        Embedding::Floats(vec![0.3, 0.4])
+        result.body.additional_properties["model"],
+        json!("embed-model")
     );
-    assert_eq!(result.body.model.as_deref(), Some("embed-model"));
     assert_eq!(result.body.usage.as_ref().unwrap().prompt_tokens, Some(7));
     assert_eq!(result.body.additional_properties["object"], json!("list"));
 
@@ -90,7 +90,7 @@ async fn sends_bearer_token_and_passes_extra_fields_through() {
         "model": "embed-model", "input": "x", "dimensions": 256, "encoding_format": "float", "user": "u1"
     }))
     .unwrap();
-    assert_eq!(body.dimensions, Some(256));
+    assert_eq!(body.additional_properties["dimensions"], json!(256));
 
     embeddings(
         &server.embeddings_url,
@@ -141,8 +141,8 @@ async fn accepts_all_input_shapes_and_base64_output() {
         .unwrap();
 
     assert_eq!(
-        result.body.data[0].embedding,
-        Embedding::Base64("AAAAAA==".to_string())
+        result.body.additional_properties["data"][0]["embedding"],
+        json!("AAAAAA==")
     );
 }
 

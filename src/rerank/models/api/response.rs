@@ -11,20 +11,7 @@ pub struct RerankResponse {
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct RerankResponseBody {
-    pub model: Option<String>,
-    #[serde(default)]
-    pub results: Vec<RerankResult>,
     pub usage: Option<RerankUsage>,
-    #[serde(flatten)]
-    pub additional_properties: IndexMap<String, Value>,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(..ApiModel)]
-pub struct RerankResult {
-    pub index: u32,
-    pub relevance_score: f64,
-    pub document: Option<Value>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }

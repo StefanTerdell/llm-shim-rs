@@ -48,11 +48,6 @@ pub enum MessagesStreamEvent {
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
-    #[serde(rename = "ping")]
-    Ping {
-        #[serde(flatten)]
-        additional_properties: IndexMap<String, Value>,
-    },
     #[serde(rename = "error")]
     Error {
         error: Value,
@@ -141,7 +136,7 @@ mod tests {
 
         assert!(matches!(
             parse(json!({"type": "ping"})),
-            MessagesStreamEvent::Ping { .. }
+            MessagesStreamEvent::Other(_)
         ));
 
         let delta = parse(

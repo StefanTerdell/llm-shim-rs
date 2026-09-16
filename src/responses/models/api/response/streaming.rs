@@ -230,8 +230,6 @@ pub enum ResponsesStreamEvent {
     },
     #[serde(rename = "response.function_call_arguments.delta")]
     FunctionCallArgumentsDelta {
-        #[serde(default)]
-        item_id: Option<String>,
         output_index: u32,
         delta: String,
         #[serde(default)]
@@ -241,8 +239,6 @@ pub enum ResponsesStreamEvent {
     },
     #[serde(rename = "response.function_call_arguments.done")]
     FunctionCallArgumentsDone {
-        #[serde(default)]
-        item_id: Option<String>,
         output_index: u32,
         arguments: String,
         #[serde(default)]
@@ -438,11 +434,7 @@ impl ResponsesStreamEvent {
             | Self::ReasoningSummaryTextDelta { item_id, .. }
             | Self::ReasoningSummaryTextDone { item_id, .. }
             | Self::ReasoningTextDelta { item_id, .. }
-            | Self::ReasoningTextDone { item_id, .. }
-            | Self::FunctionCallArgumentsDelta { item_id, .. }
-            | Self::FunctionCallArgumentsDone { item_id, .. } => {
-                *item_id = Some(new_id.to_string())
-            }
+            | Self::ReasoningTextDone { item_id, .. } => *item_id = Some(new_id.to_string()),
             _ => {}
         }
     }

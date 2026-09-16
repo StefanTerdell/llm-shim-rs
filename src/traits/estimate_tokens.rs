@@ -61,14 +61,6 @@ impl EstimateTokens for CommonChatCompletionMessage {
 
         let mut total = PER_MESSAGE_OVERHEAD;
 
-        if let Some(role) = &self.role {
-            total += role.estimate_tokens();
-        };
-
-        if let Some(name) = &self.name {
-            total += name.estimate_tokens() + 1;
-        }
-
         // Tool calls cost tokens too: fn name + the arguments JSON string.
         for call in self.tool_calls.iter().flatten() {
             total += call.function.name.estimate_tokens()
@@ -136,7 +128,7 @@ impl EstimateTokens for MessageParam {
     fn estimate_tokens(&self) -> u32 {
         const PER_MESSAGE_OVERHEAD: u32 = 4;
 
-        PER_MESSAGE_OVERHEAD + self.role.estimate_tokens() + self.content.estimate_tokens()
+        PER_MESSAGE_OVERHEAD + self.content.estimate_tokens()
     }
 }
 
@@ -156,7 +148,6 @@ impl EstimateTokens for ContentBlock {
         match self {
             ContentBlock::Text { text, .. } => text.estimate_tokens(),
             ContentBlock::Thinking { thinking, .. } => thinking.estimate_tokens(),
-            ContentBlock::RedactedThinking { data, .. } => data.estimate_tokens(),
             ContentBlock::ToolUse { name, input, .. } => {
                 name.estimate_tokens() + input.to_string().estimate_tokens() + 4
             }

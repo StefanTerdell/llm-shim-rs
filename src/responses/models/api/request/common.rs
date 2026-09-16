@@ -4,7 +4,6 @@ use serde_json::Value;
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonResponsesRequestBody {
-    pub model: Option<String>,
     pub input: ResponsesInput,
     pub instructions: Option<String>,
     #[serde(flatten)]

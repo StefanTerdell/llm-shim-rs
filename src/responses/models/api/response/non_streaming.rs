@@ -15,11 +15,6 @@ pub struct NonStreamingResponsesResponse {
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct ResponseBody {
-    pub id: Option<String>,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    #[schemars(with = "Option<Option<String>>")]
-    pub status: Option<Option<String>>,
-    pub model: Option<String>,
     #[serde(default)]
     pub output: Vec<OutputItem>,
     #[serde(default, with = "serde_with::rust::double_option")]
@@ -44,6 +39,12 @@ mod tests {
     #[test]
     fn null_and_absent_fields_round_trip_byte_faithfully() {
         let with_nulls = json!({"id": "r", "object": "response", "status": "in_progress", "output": [], "usage": null, "error": null});
+        assert_eq!(
+            serde_json::from_value::<ResponseBody>(with_nulls.clone())
+                .unwrap()
+                .additional_properties["status"],
+            json!("in_progress")
+        );
         assert_eq!(round_trip(with_nulls.clone()), with_nulls);
 
         let without = json!({"id": "r", "output": []});

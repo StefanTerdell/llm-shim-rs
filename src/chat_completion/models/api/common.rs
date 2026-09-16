@@ -7,12 +7,9 @@ use std::ops::Add;
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonChatCompletionMessage {
-    #[serialize_always]
-    pub role: Option<String>,
     pub tool_calls: Option<Vec<ChatCompletionRequestMessageToolCall>>,
     pub reasoning_content: Option<String>,
     pub reasoning: Option<String>,
-    pub name: Option<String>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }
@@ -21,11 +18,9 @@ impl Add for CommonChatCompletionMessage {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
         Self {
-            role: rhs.role.or(self.role),
             tool_calls: self.tool_calls.or_merge(rhs.tool_calls),
             reasoning_content: self.reasoning_content.or_merge(rhs.reasoning_content),
             reasoning: self.reasoning.or_merge(rhs.reasoning),
-            name: rhs.name.or(self.name),
             additional_properties: self
                 .additional_properties
                 .into_iter()

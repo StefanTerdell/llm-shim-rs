@@ -6,8 +6,6 @@ use crate::messages::models::api::common::ContentBlock;
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonMessagesRequestBody {
-    pub model: String,
-    pub max_tokens: u32,
     pub messages: Vec<MessageParam>,
     pub system: Option<MessageContent>,
     #[serde(flatten)]
@@ -16,7 +14,6 @@ pub struct CommonMessagesRequestBody {
 
 #[derive(..ApiModel)]
 pub struct MessageParam {
-    pub role: String,
     pub content: MessageContent,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

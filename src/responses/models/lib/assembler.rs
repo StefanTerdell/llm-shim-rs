@@ -210,10 +210,8 @@ impl ResponseAssembler {
                 if let OutputItem::FunctionCall { arguments, .. } =
                     self.item_or_insert(*output_index, || OutputItem::FunctionCall {
                         id: None,
-                        call_id: None,
                         name: String::new(),
                         arguments: String::new(),
-                        status: None,
                         additional_properties: Default::default(),
                     })
                 {
@@ -228,10 +226,8 @@ impl ResponseAssembler {
                 if let OutputItem::FunctionCall { arguments, .. } =
                     self.item_or_insert(*output_index, || OutputItem::FunctionCall {
                         id: None,
-                        call_id: None,
                         name: String::new(),
                         arguments: String::new(),
-                        status: None,
                         additional_properties: Default::default(),
                     })
                 {
@@ -387,8 +383,8 @@ mod tests {
         ]);
 
         let body = a.into_body();
-        assert_eq!(body.id.as_deref(), Some("resp_1"));
-        assert_eq!(body.status.flatten().as_deref(), Some("completed"));
+        assert_eq!(body.additional_properties["id"], json!("resp_1"));
+        assert_eq!(body.additional_properties["status"], json!("completed"));
         assert_eq!(body.usage.flatten().unwrap().output_tokens, Some(5));
         assert_eq!(
             serde_json::to_value(&body.output).unwrap(),
@@ -455,7 +451,7 @@ mod tests {
 
         assert_eq!(a.error().unwrap()["message"], json!("boom"));
         let body = a.into_body();
-        assert_eq!(body.status.flatten().as_deref(), Some("failed"));
+        assert_eq!(body.additional_properties["status"], json!("failed"));
         assert_eq!(body.output.len(), 1);
     }
 }

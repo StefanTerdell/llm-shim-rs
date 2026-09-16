@@ -254,7 +254,10 @@ mod non_streaming {
             .map(|c| c.message.content.clone().unwrap())
             .collect();
         assert_eq!(contents, ["Hello", "World"]);
-        assert_eq!(choices[0].message.common.role.as_deref(), Some("assistant"));
+        assert_eq!(
+            choices[0].message.common.additional_properties["role"],
+            json!("assistant")
+        );
         assert_eq!(response.body.usage.prompt_tokens(), 7);
         assert_eq!(response.body.usage.completion_tokens(), 4);
         assert_eq!(response.body.usage.total_tokens(), 11);

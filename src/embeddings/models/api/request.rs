@@ -1,13 +1,9 @@
 use indexmap::IndexMap;
 use serde_json::Value;
 
-#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct EmbeddingsRequestBody {
-    pub model: String,
     pub input: EmbeddingsInput,
-    pub encoding_format: Option<String>,
-    pub dimensions: Option<u32>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }

@@ -220,8 +220,11 @@ mod non_streaming {
                 .await
                 .unwrap();
 
-        assert_eq!(response.body.id.as_deref(), Some("resp_1"));
-        assert_eq!(response.body.status.flatten().as_deref(), Some("completed"));
+        assert_eq!(response.body.additional_properties["id"], json!("resp_1"));
+        assert_eq!(
+            response.body.additional_properties["status"],
+            json!("completed")
+        );
         let OutputItem::Message { content, .. } = &response.body.output[0] else {
             panic!("message")
         };

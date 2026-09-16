@@ -22,18 +22,3 @@ pub struct StreamingChatCompletionChoice {
     #[serde(flatten)]
     pub common: CommonChatCompletionChoice,
 }
-
-#[derive(..ApiModel)]
-pub struct StreamingChatCompletionToolCall {
-    pub function: StreamingChatCompletionResponseFunctionToolCall,
-    #[serde(flatten)]
-    pub additional_properties: IndexMap<String, Value>,
-}
-
-#[derive(..ApiModel)]
-pub struct StreamingChatCompletionResponseFunctionToolCall {
-    pub name: String,
-    pub arguments: String,
-    #[serde(flatten)]
-    pub additional_properties: IndexMap<String, Value>,
-}

@@ -15,9 +15,6 @@ pub struct NonStreamingMessagesResponse {
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct MessagesResponseBody {
-    pub id: Option<String>,
-    pub role: Option<String>,
-    pub model: Option<String>,
     #[serde(default)]
     pub content: Vec<ContentBlock>,
     #[serde(default)]

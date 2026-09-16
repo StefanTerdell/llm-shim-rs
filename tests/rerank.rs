@@ -52,13 +52,13 @@ async fn parses_results_and_reports_tokens_from_usage() {
     .await
     .unwrap();
 
-    assert_eq!(result.body.results.len(), 2);
-    assert_eq!(result.body.results[0].index, 1);
-    assert!((result.body.results[0].relevance_score - 0.91).abs() < 1e-9);
-    assert_eq!(
-        result.body.results[0].document.as_ref().unwrap()["text"],
-        json!("pizza napoli")
-    );
+    let results = result.body.additional_properties["results"]
+        .as_array()
+        .unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0]["index"], json!(1));
+    assert_eq!(results[0]["relevance_score"], json!(0.91));
+    assert_eq!(results[0]["document"]["text"], json!("pizza napoli"));
     assert_eq!(result.body.usage.as_ref().unwrap().total_tokens, Some(42));
 
     assert!(!result.stats.input_tokens_is_estimate);
@@ -85,7 +85,7 @@ async fn estimates_tokens_from_query_and_documents_when_usage_is_missing() {
 
     assert!(result.stats.input_tokens_is_estimate);
     assert!(result.stats.input_tokens > 0);
-    assert!(result.body.results.is_empty());
+    assert_eq!(result.body.additional_properties["results"], json!([]));
     assert!(result.body.usage.is_none());
 }
 

@@ -38,15 +38,8 @@ pub enum ContentBlock {
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
-    #[serde(rename = "redacted_thinking")]
-    RedactedThinking {
-        data: String,
-        #[serde(flatten)]
-        additional_properties: IndexMap<String, Value>,
-    },
     #[serde(rename = "tool_use")]
     ToolUse {
-        id: String,
         name: String,
         input: Value,
         #[serde(flatten)]

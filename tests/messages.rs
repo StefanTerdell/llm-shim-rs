@@ -174,7 +174,7 @@ async fn unknown_events_and_pings_pass_through() {
     let events = collect(&server, request(json!({}))).await;
 
     let raw = raw_events(&events);
-    assert!(matches!(raw[1], MessagesStreamEvent::Ping { .. }));
+    assert!(matches!(raw[1], MessagesStreamEvent::Other(_)));
     assert!(matches!(raw[2], MessagesStreamEvent::Other(_)));
     assert!(matches!(
         events.last().unwrap(),
@@ -247,8 +247,8 @@ mod non_streaming {
             .unwrap();
 
         let body = response.body;
-        assert_eq!(body.id.as_deref(), Some("msg_1"));
-        assert_eq!(body.role.as_deref(), Some("assistant"));
+        assert_eq!(body.additional_properties["id"], json!("msg_1"));
+        assert_eq!(body.additional_properties["role"], json!("assistant"));
         assert_eq!(body.stop_reason.as_deref(), Some("tool_use"));
         assert_eq!(body.usage.input_tokens, Some(30));
         assert_eq!(body.usage.output_tokens, Some(40));
@@ -259,12 +259,14 @@ mod non_streaming {
         );
         assert_eq!(body.content[1], ContentBlock::text("Checking weather"));
         let ContentBlock::ToolUse {
-            id, name, input, ..
+            name,
+            input,
+            additional_properties,
         } = &body.content[2]
         else {
             panic!("third block should be tool_use");
         };
-        assert_eq!(id, "toolu_1");
+        assert_eq!(additional_properties["id"], json!("toolu_1"));
         assert_eq!(name, "get_weather");
         assert_eq!(*input, json!({"city": "Paris"}));
         assert!(response.stats.is_some());

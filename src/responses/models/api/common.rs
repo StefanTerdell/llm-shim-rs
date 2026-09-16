@@ -36,8 +36,6 @@ pub enum OutputItem {
         summary: Vec<ReasoningPart>,
         #[serde(default)]
         content: Option<Vec<ReasoningPart>>,
-        #[serde(default)]
-        status: Option<String>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
@@ -45,13 +43,9 @@ pub enum OutputItem {
     FunctionCall {
         #[serde(default)]
         id: Option<String>,
-        #[serde(default)]
-        call_id: Option<String>,
         name: String,
         #[serde(default)]
         arguments: String,
-        #[serde(default)]
-        status: Option<String>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
@@ -75,7 +69,6 @@ impl OutputItem {
             id,
             summary: vec![],
             content: None,
-            status: None,
             additional_properties: Default::default(),
         }
     }
@@ -91,10 +84,8 @@ impl OutputItem {
 
     pub fn status_mut(&mut self) -> Option<&mut Option<String>> {
         match self {
-            Self::Message { status, .. }
-            | Self::Reasoning { status, .. }
-            | Self::FunctionCall { status, .. } => Some(status),
-            Self::Other(_) => None,
+            Self::Message { status, .. } => Some(status),
+            _ => None,
         }
     }
 }
