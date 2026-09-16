@@ -6,7 +6,7 @@ use crate::{
             response::streaming::MessagesStreamEvent,
         },
         lib::{
-            options::{MessagesOptions, thinking_remapping::ThinkingRemappingState},
+            options::{MessagesOptions, reasoning_remapping::MessagesReasoningRemappingState},
             streaming::response::{StreamingMessagesEvent, StreamingMessagesResponse},
         },
     },
@@ -33,7 +33,9 @@ pub async fn streaming_messages<'a>(
 
     let client = options.client.unwrap_or_default();
     let tps_throttler = options.tps_throttler;
-    let mut remapper = options.thinking_remapping.map(ThinkingRemappingState::new);
+    let mut remapper = options
+        .reasoning_remapping
+        .map(MessagesReasoningRemappingState::new);
 
     let mut request = client.post(url).json(&body).header(
         "anthropic-version",

@@ -297,7 +297,7 @@ mod non_streaming {
 
 mod reasoning_remapping {
     use super::*;
-    use llm_stream_map::responses::models::lib::options::reasoning_remapping::ReasoningPosition;
+    use llm_stream_map::responses::models::lib::options::reasoning_remapping::ResponsesReasoningPosition;
 
     #[tokio::test]
     async fn summaries_become_tags_in_the_text_stream_and_in_the_completed_output() {
@@ -327,8 +327,8 @@ mod reasoning_remapping {
         .await;
 
         let options = ResponsesOptions::default().with_reasoning_remapping((
-            ReasoningPosition::Summary,
-            ReasoningPosition::text_unchecked("<think>", "</think>"),
+            ResponsesReasoningPosition::Summary,
+            ResponsesReasoningPosition::text_unchecked("<think>", "</think>"),
         ));
 
         let events = collect_with(&server, request(json!({})), options).await;
@@ -371,8 +371,8 @@ mod reasoning_remapping {
         .await;
 
         let options = ResponsesOptions::default().with_reasoning_remapping((
-            ReasoningPosition::text_unchecked("<think>", "</think>"),
-            ReasoningPosition::Summary,
+            ResponsesReasoningPosition::text_unchecked("<think>", "</think>"),
+            ResponsesReasoningPosition::Summary,
         ));
 
         let response =

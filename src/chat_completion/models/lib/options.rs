@@ -1,10 +1,10 @@
 use reqwest::Client;
 use std::fmt::Display;
 use stefans_utils::{prelude::AsClone, secret::Secret};
-pub mod reasoning_content_remapping;
+pub mod reasoning_remapping;
 
 use crate::{
-    chat_completion::models::lib::options::reasoning_content_remapping::ReasoningContentRemappingConfig,
+    chat_completion::models::lib::options::reasoning_remapping::ChatCompletionReasoningRemappingConfig,
     traits::max_tps::MaxTps,
 };
 
@@ -13,7 +13,7 @@ pub struct ChatCompletionOptions<'a> {
     pub client: Option<Client>,
     pub bearer_token: Option<Secret<String>>,
     pub max_tps: Option<&'a dyn MaxTps>,
-    pub reasoning_content_remapping: Option<ReasoningContentRemappingConfig>,
+    pub reasoning_remapping: Option<ChatCompletionReasoningRemappingConfig>,
     pub output_token_counting: OutputTokenCounting,
 }
 
@@ -57,16 +57,16 @@ impl ChatCompletionOptions<'_> {
         self
     }
 
-    pub fn with_remap_reasoning(
+    pub fn with_reasoning_remapping(
         mut self,
-        remap_reasoning: impl Into<ReasoningContentRemappingConfig>,
+        reasoning_remapping: impl Into<ChatCompletionReasoningRemappingConfig>,
     ) -> Self {
-        self.reasoning_content_remapping = Some(remap_reasoning.into());
+        self.reasoning_remapping = Some(reasoning_remapping.into());
         self
     }
 
-    pub fn without_remap_reasoning(mut self) -> Self {
-        self.reasoning_content_remapping = None;
+    pub fn without_reasoning_remapping(mut self) -> Self {
+        self.reasoning_remapping = None;
         self
     }
 

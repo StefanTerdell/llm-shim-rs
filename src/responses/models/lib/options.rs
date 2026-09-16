@@ -4,7 +4,7 @@ use stefans_utils::{prelude::AsClone, secret::Secret};
 pub mod reasoning_remapping;
 
 use crate::{
-    responses::models::lib::options::reasoning_remapping::ReasoningRemappingConfig,
+    responses::models::lib::options::reasoning_remapping::ResponsesReasoningRemappingConfig,
     traits::max_tps::MaxTps,
 };
 
@@ -13,7 +13,7 @@ pub struct ResponsesOptions<'a> {
     pub client: Option<Client>,
     pub bearer_token: Option<Secret<String>>,
     pub tps_throttler: Option<&'a dyn MaxTps>,
-    pub reasoning_remapping: Option<ReasoningRemappingConfig>,
+    pub reasoning_remapping: Option<ResponsesReasoningRemappingConfig>,
 }
 
 impl ResponsesOptions<'_> {
@@ -51,7 +51,7 @@ impl ResponsesOptions<'_> {
 
     pub fn with_reasoning_remapping(
         mut self,
-        reasoning_remapping: impl Into<ReasoningRemappingConfig>,
+        reasoning_remapping: impl Into<ResponsesReasoningRemappingConfig>,
     ) -> Self {
         self.reasoning_remapping = Some(reasoning_remapping.into());
         self

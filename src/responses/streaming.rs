@@ -6,7 +6,7 @@ use crate::{
             response::streaming::ResponsesStreamEvent,
         },
         lib::{
-            options::{ResponsesOptions, reasoning_remapping::ReasoningRemappingState},
+            options::{ResponsesOptions, reasoning_remapping::ResponsesReasoningRemappingState},
             streaming::response::{StreamingResponsesEvent, StreamingResponsesResponse},
         },
     },
@@ -33,7 +33,7 @@ pub async fn streaming_responses<'a>(
     let tps_throttler = options.tps_throttler;
     let mut remapper = options
         .reasoning_remapping
-        .map(ReasoningRemappingState::new);
+        .map(ResponsesReasoningRemappingState::new);
 
     let mut request = client.post(url).json(&body);
 

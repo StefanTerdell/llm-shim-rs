@@ -11,19 +11,21 @@ use crate::responses::models::{
 };
 
 #[derive(..ApiModel, Copy, Eq, Hash)]
-pub struct ReasoningRemappingConfig {
-    pub from: ReasoningPosition,
-    pub to: ReasoningPosition,
+pub struct ResponsesReasoningRemappingConfig {
+    pub from: ResponsesReasoningPosition,
+    pub to: ResponsesReasoningPosition,
 }
 
-impl From<(ReasoningPosition, ReasoningPosition)> for ReasoningRemappingConfig {
-    fn from((from, to): (ReasoningPosition, ReasoningPosition)) -> Self {
+impl From<(ResponsesReasoningPosition, ResponsesReasoningPosition)>
+    for ResponsesReasoningRemappingConfig
+{
+    fn from((from, to): (ResponsesReasoningPosition, ResponsesReasoningPosition)) -> Self {
         Self { from, to }
     }
 }
 
 #[derive(..ApiModel, Copy, Eq, Hash)]
-pub enum ReasoningPosition {
+pub enum ResponsesReasoningPosition {
     Summary,
     Content,
     Text {
@@ -32,7 +34,7 @@ pub enum ReasoningPosition {
     },
 }
 
-impl ReasoningPosition {
+impl ResponsesReasoningPosition {
     pub fn text(
         start_tag: impl AsRef<str>,
         stop_tag: impl AsRef<str>,
@@ -50,19 +52,19 @@ impl ReasoningPosition {
     }
 }
 
-pub struct ReasoningRemappingState {
+pub struct ResponsesReasoningRemappingState {
     extractor: Extractor,
     emitter: Emitter,
 }
 
-impl ReasoningRemappingState {
-    pub fn new(config: impl Into<ReasoningRemappingConfig>) -> Self {
-        let ReasoningRemappingConfig { from, to } = config.into();
+impl ResponsesReasoningRemappingState {
+    pub fn new(config: impl Into<ResponsesReasoningRemappingConfig>) -> Self {
+        let ResponsesReasoningRemappingConfig { from, to } = config.into();
 
         Self {
             extractor: Extractor {
                 tags: match from {
-                    ReasoningPosition::Text {
+                    ResponsesReasoningPosition::Text {
                         start_tag,
                         stop_tag,
                     } => Some((start_tag, stop_tag)),
@@ -636,7 +638,7 @@ struct OpenReasoning {
 }
 
 struct Emitter {
-    to: ReasoningPosition,
+    to: ResponsesReasoningPosition,
     assembler: ResponseAssembler,
     next_out: u32,
     item_map: IndexMap<u32, u32>,
@@ -652,7 +654,7 @@ struct Emitter {
 impl Emitter {
     fn emit_item(&mut self, item: Item, out: &mut Vec<ResponsesStreamEvent>) {
         match self.to {
-            ReasoningPosition::Text {
+            ResponsesReasoningPosition::Text {
                 start_tag,
                 stop_tag,
             } => match item {
@@ -701,7 +703,8 @@ impl Emitter {
                 Item::MessagePart(event) => self.message_part(event, out),
                 Item::Passthrough(event) => self.passthrough(event, out),
             },
-            ReasoningPosition::Summary | ReasoningPosition::Content => match item {
+            ResponsesReasoningPosition::Summary | ResponsesReasoningPosition::Content => match item
+            {
                 Item::MessageStart { id } => {
                     self.close_message(out);
                     self.message = Some(OpenMessage::new(id));
@@ -959,7 +962,7 @@ impl Emitter {
         self.next_out += 1;
 
         let mut item = OutputItem::reasoning(Some(id.clone()));
-        if self.to == ReasoningPosition::Content
+        if self.to == ResponsesReasoningPosition::Content
             && let OutputItem::Reasoning { content, .. } = &mut item
         {
             *content = Some(vec![]);
@@ -1000,7 +1003,7 @@ impl Emitter {
         let output_index = r.out;
 
         let event = match self.to {
-            ReasoningPosition::Content => ResponsesStreamEvent::ContentPartAdded {
+            ResponsesReasoningPosition::Content => ResponsesStreamEvent::ContentPartAdded {
                 item_id,
                 output_index,
                 content_index: index,
@@ -1036,7 +1039,7 @@ impl Emitter {
         let index = r.part.unwrap();
 
         let event = match self.to {
-            ReasoningPosition::Content => ResponsesStreamEvent::ReasoningTextDelta {
+            ResponsesReasoningPosition::Content => ResponsesStreamEvent::ReasoningTextDelta {
                 item_id,
                 output_index,
                 content_index: index,
@@ -1073,7 +1076,7 @@ impl Emitter {
             Some(OutputItem::Reasoning {
                 summary, content, ..
             }) => match self.to {
-                ReasoningPosition::Content => content
+                ResponsesReasoningPosition::Content => content
                     .as_ref()
                     .and_then(|c| c.get(index as usize))
                     .and_then(ReasoningPart::text),
@@ -1085,7 +1088,7 @@ impl Emitter {
         .unwrap_or_default();
 
         match self.to {
-            ReasoningPosition::Content => {
+            ResponsesReasoningPosition::Content => {
                 self.emit(
                     ResponsesStreamEvent::ReasoningTextDone {
                         item_id: item_id.clone(),
@@ -1213,12 +1216,15 @@ mod tests {
         serde_json::from_value(v).unwrap()
     }
 
-    fn tags() -> ReasoningPosition {
-        ReasoningPosition::text_unchecked("<think>", "</think>")
+    fn tags() -> ResponsesReasoningPosition {
+        ResponsesReasoningPosition::text_unchecked("<think>", "</think>")
     }
 
-    fn run(config: (ReasoningPosition, ReasoningPosition), input: Vec<Value>) -> Vec<Value> {
-        let mut state = ReasoningRemappingState::new(config);
+    fn run(
+        config: (ResponsesReasoningPosition, ResponsesReasoningPosition),
+        input: Vec<Value>,
+    ) -> Vec<Value> {
+        let mut state = ResponsesReasoningRemappingState::new(config);
         let mut out = vec![];
         for v in input {
             out.extend(state.apply(ev(v)));
@@ -1346,7 +1352,7 @@ mod tests {
     #[test]
     fn summary_becomes_tags_merged_into_the_following_message() {
         let out = run(
-            (ReasoningPosition::Summary, tags()),
+            (ResponsesReasoningPosition::Summary, tags()),
             native_reasoning_then_message(true),
         );
 
@@ -1376,7 +1382,7 @@ mod tests {
     #[test]
     fn tags_become_a_summary_reasoning_item_before_the_message() {
         let out = run(
-            (tags(), ReasoningPosition::Summary),
+            (tags(), ResponsesReasoningPosition::Summary),
             vec![
                 item_added(0, message("msg_1", "in_progress", None)),
                 part_added("msg_1", 0, 0),
@@ -1426,7 +1432,10 @@ mod tests {
     #[test]
     fn summary_parts_become_reasoning_content_parts_and_the_message_is_untouched() {
         let out = run(
-            (ReasoningPosition::Summary, ReasoningPosition::Content),
+            (
+                ResponsesReasoningPosition::Summary,
+                ResponsesReasoningPosition::Content,
+            ),
             native_reasoning_then_message(false),
         );
 
@@ -1467,7 +1476,7 @@ mod tests {
             completed(vec![message("msg_1", "completed", Some("plain"))]),
         ];
         assert_eq!(
-            run((tags(), ReasoningPosition::Summary), input.clone()),
+            run((tags(), ResponsesReasoningPosition::Summary), input.clone()),
             input
         );
     }
@@ -1475,7 +1484,7 @@ mod tests {
     #[test]
     fn other_items_are_reindexed_and_the_merged_message_is_closed_before_them() {
         let out = run(
-            (ReasoningPosition::Summary, tags()),
+            (ResponsesReasoningPosition::Summary, tags()),
             vec![
                 item_added(0, reasoning("rs_1", &[])),
                 summary_part_added("rs_1", 0, 0),
@@ -1518,7 +1527,7 @@ mod tests {
     #[test]
     fn multiple_summary_parts_are_joined_with_blank_lines_in_tags() {
         let out = run(
-            (ReasoningPosition::Summary, tags()),
+            (ResponsesReasoningPosition::Summary, tags()),
             vec![
                 item_added(0, reasoning("rs_1", &[])),
                 summary_part_added("rs_1", 0, 0),
@@ -1543,7 +1552,7 @@ mod tests {
     #[test]
     fn text_before_the_tag_keeps_the_original_id_and_the_rest_is_synthesized() {
         let out = run(
-            (tags(), ReasoningPosition::Content),
+            (tags(), ResponsesReasoningPosition::Content),
             vec![
                 item_added(0, message("msg_1", "in_progress", None)),
                 part_added("msg_1", 0, 0),
@@ -1583,7 +1592,7 @@ mod tests {
     #[test]
     fn done_only_items_without_deltas_are_still_remapped() {
         let out = run(
-            (ReasoningPosition::Summary, tags()),
+            (ResponsesReasoningPosition::Summary, tags()),
             vec![
                 item_done(0, reasoning("rs_1", &["plan"])),
                 item_done(1, message("msg_1", "completed", Some("answer"))),

@@ -7,19 +7,21 @@ use crate::messages::models::api::{
 };
 
 #[derive(..ApiModel, Copy, Eq, Hash)]
-pub struct ThinkingRemappingConfig {
-    pub from: ThinkingPosition,
-    pub to: ThinkingPosition,
+pub struct MessagesReasoningRemappingConfig {
+    pub from: MessagesReasoningPosition,
+    pub to: MessagesReasoningPosition,
 }
 
-impl From<(ThinkingPosition, ThinkingPosition)> for ThinkingRemappingConfig {
-    fn from((from, to): (ThinkingPosition, ThinkingPosition)) -> Self {
+impl From<(MessagesReasoningPosition, MessagesReasoningPosition)>
+    for MessagesReasoningRemappingConfig
+{
+    fn from((from, to): (MessagesReasoningPosition, MessagesReasoningPosition)) -> Self {
         Self { from, to }
     }
 }
 
 #[derive(..ApiModel, Copy, Eq, Hash)]
-pub enum ThinkingPosition {
+pub enum MessagesReasoningPosition {
     ThinkingBlock,
     Text {
         start_tag: ArrayString<32>,
@@ -27,7 +29,7 @@ pub enum ThinkingPosition {
     },
 }
 
-impl ThinkingPosition {
+impl MessagesReasoningPosition {
     pub fn text(
         start_tag: impl AsRef<str>,
         stop_tag: impl AsRef<str>,
@@ -45,19 +47,19 @@ impl ThinkingPosition {
     }
 }
 
-pub struct ThinkingRemappingState {
+pub struct MessagesReasoningRemappingState {
     extractor: Extractor,
     emitter: Emitter,
 }
 
-impl ThinkingRemappingState {
-    pub fn new(config: impl Into<ThinkingRemappingConfig>) -> Self {
-        let ThinkingRemappingConfig { from, to } = config.into();
+impl MessagesReasoningRemappingState {
+    pub fn new(config: impl Into<MessagesReasoningRemappingConfig>) -> Self {
+        let MessagesReasoningRemappingConfig { from, to } = config.into();
 
         let extractor = Extractor {
             tags: match from {
-                ThinkingPosition::ThinkingBlock => None,
-                ThinkingPosition::Text {
+                MessagesReasoningPosition::ThinkingBlock => None,
+                MessagesReasoningPosition::Text {
                     start_tag,
                     stop_tag,
                 } => Some((start_tag, stop_tag)),
@@ -67,8 +69,8 @@ impl ThinkingRemappingState {
         };
 
         let emitter = match to {
-            ThinkingPosition::ThinkingBlock => Emitter::Blocks(BlockEmitter::default()),
-            ThinkingPosition::Text {
+            MessagesReasoningPosition::ThinkingBlock => Emitter::Blocks(BlockEmitter::default()),
+            MessagesReasoningPosition::Text {
                 start_tag,
                 stop_tag,
             } => Emitter::Tags(TagEmitter {
@@ -618,15 +620,15 @@ mod tests {
     use crate::messages::models::api::common::{ContentBlock, ContentBlockDelta};
     use serde_json::json;
 
-    fn tags() -> ThinkingPosition {
-        ThinkingPosition::text_unchecked("<think>", "</think>")
+    fn tags() -> MessagesReasoningPosition {
+        MessagesReasoningPosition::text_unchecked("<think>", "</think>")
     }
 
     fn run(
-        config: (ThinkingPosition, ThinkingPosition),
+        config: (MessagesReasoningPosition, MessagesReasoningPosition),
         input: Vec<MessagesStreamEvent>,
     ) -> Vec<MessagesStreamEvent> {
-        let mut state = ThinkingRemappingState::new(config);
+        let mut state = MessagesReasoningRemappingState::new(config);
         let mut out = vec![];
         for event in input {
             out.extend(state.apply(event));
@@ -681,7 +683,7 @@ mod tests {
     #[test]
     fn thinking_block_becomes_tags_merged_into_the_following_text_block() {
         let out = run(
-            (ThinkingPosition::ThinkingBlock, tags()),
+            (MessagesReasoningPosition::ThinkingBlock, tags()),
             vec![
                 thinking_start(0),
                 thinking(0, "a"),
@@ -715,7 +717,7 @@ mod tests {
     #[test]
     fn thinking_block_to_tags_closes_text_block_before_a_tool_use_block() {
         let out = run(
-            (ThinkingPosition::ThinkingBlock, tags()),
+            (MessagesReasoningPosition::ThinkingBlock, tags()),
             vec![
                 thinking_start(0),
                 thinking(0, "a"),
@@ -745,7 +747,10 @@ mod tests {
 
     #[test]
     fn thinking_block_to_tags_defers_the_stop_until_flush() {
-        let mut state = ThinkingRemappingState::new((ThinkingPosition::ThinkingBlock, tags()));
+        let mut state = MessagesReasoningRemappingState::new((
+            MessagesReasoningPosition::ThinkingBlock,
+            tags(),
+        ));
         let mut out = vec![];
         for event in [thinking_start(0), thinking(0, "a"), stop(0)] {
             out.extend(state.apply(event));
@@ -765,7 +770,7 @@ mod tests {
     #[test]
     fn tags_become_a_thinking_block_across_split_deltas() {
         let out = run(
-            (tags(), ThinkingPosition::ThinkingBlock),
+            (tags(), MessagesReasoningPosition::ThinkingBlock),
             vec![
                 text_start(0),
                 text(0, "<thi"),
@@ -797,7 +802,7 @@ mod tests {
     #[test]
     fn tags_in_the_middle_of_text_split_the_text_block_in_three() {
         let out = run(
-            (tags(), ThinkingPosition::ThinkingBlock),
+            (tags(), MessagesReasoningPosition::ThinkingBlock),
             vec![
                 text_start(0),
                 text(0, "hello <think>x</think> bye"),
@@ -831,14 +836,17 @@ mod tests {
             stop(0),
             message_delta(),
         ];
-        let out = run((tags(), ThinkingPosition::ThinkingBlock), input.clone());
+        let out = run(
+            (tags(), MessagesReasoningPosition::ThinkingBlock),
+            input.clone(),
+        );
         assert_eq!(out, input);
     }
 
     #[test]
     fn a_false_partial_tag_is_released_as_text() {
         let out = run(
-            (tags(), ThinkingPosition::ThinkingBlock),
+            (tags(), MessagesReasoningPosition::ThinkingBlock),
             vec![text_start(0), text(0, "a <th"), text(0, "ing"), stop(0)],
         );
         assert_eq!(
@@ -858,14 +866,20 @@ mod tests {
             text(1, "b"),
             stop(1),
         ];
-        let out = run((tags(), ThinkingPosition::ThinkingBlock), input.clone());
+        let out = run(
+            (tags(), MessagesReasoningPosition::ThinkingBlock),
+            input.clone(),
+        );
         assert_eq!(out, input);
     }
 
     #[test]
     fn tag_to_tag_renames_inside_one_text_block() {
         let out = run(
-            (tags(), ThinkingPosition::text_unchecked("[T]", "[/T]")),
+            (
+                tags(),
+                MessagesReasoningPosition::text_unchecked("[T]", "[/T]"),
+            ),
             vec![
                 text_start(0),
                 text(0, "<think>a</think>b"),
@@ -892,7 +906,7 @@ mod tests {
         let redacted: ContentBlock =
             serde_json::from_value(json!({"type": "redacted_thinking", "data": "xyz"})).unwrap();
         let out = run(
-            (ThinkingPosition::ThinkingBlock, tags()),
+            (MessagesReasoningPosition::ThinkingBlock, tags()),
             vec![
                 ping(),
                 start(0, redacted.clone()),

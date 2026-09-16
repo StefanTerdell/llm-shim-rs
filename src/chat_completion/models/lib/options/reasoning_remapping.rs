@@ -1,32 +1,38 @@
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
 
-use crate::traits::reasoning_content_remapping::{
-    ReasoningContentRemappingInnerTarget, ReasoningContentRemappingTarget,
-};
+use crate::chat_completion::models::api::response::common::ChatCompletionResponseMessage;
 
 #[derive(..ApiModel, Copy, Eq, Hash)]
-pub struct ReasoningContentRemappingConfig {
-    pub from: ReasoningContentPosition,
-    pub to: ReasoningContentPosition,
+pub struct ChatCompletionReasoningRemappingConfig {
+    pub from: ChatCompletionReasoningPosition,
+    pub to: ChatCompletionReasoningPosition,
 }
 
-impl ReasoningContentRemappingConfig {
-    pub fn into_state(self) -> ReasoningContentRemappingState {
-        ReasoningContentRemappingState::new(self)
+impl ChatCompletionReasoningRemappingConfig {
+    pub fn into_state(self) -> ChatCompletionReasoningRemappingState {
+        ChatCompletionReasoningRemappingState::new(self)
     }
 }
 
-impl From<(ReasoningContentPosition, ReasoningContentPosition)>
-    for ReasoningContentRemappingConfig
+impl
+    From<(
+        ChatCompletionReasoningPosition,
+        ChatCompletionReasoningPosition,
+    )> for ChatCompletionReasoningRemappingConfig
 {
-    fn from((from, to): (ReasoningContentPosition, ReasoningContentPosition)) -> Self {
+    fn from(
+        (from, to): (
+            ChatCompletionReasoningPosition,
+            ChatCompletionReasoningPosition,
+        ),
+    ) -> Self {
         Self { from, to }
     }
 }
 
 #[derive(..ApiModel, Copy, Eq, Hash)]
-pub enum ReasoningContentPosition {
+pub enum ChatCompletionReasoningPosition {
     Content {
         start_tag: ArrayString<32>,
         stop_tag: ArrayString<32>,
@@ -35,7 +41,7 @@ pub enum ReasoningContentPosition {
     Reasoning,
 }
 
-impl ReasoningContentPosition {
+impl ChatCompletionReasoningPosition {
     pub fn content(
         start_tag: impl AsRef<str>,
         stop_tag: impl AsRef<str>,
@@ -53,9 +59,9 @@ impl ReasoningContentPosition {
     }
 }
 
-pub struct ReasoningContentRemappingState {
-    from: ReasoningContentPosition,
-    to: ReasoningContentPosition,
+pub struct ChatCompletionReasoningRemappingState {
+    from: ChatCompletionReasoningPosition,
+    to: ChatCompletionReasoningPosition,
     choices: IndexMap<usize, ChoiceState>,
 }
 
@@ -66,9 +72,9 @@ struct ChoiceState {
     partial: Option<String>,
 }
 
-impl ReasoningContentRemappingState {
-    pub fn new(positions: impl Into<ReasoningContentRemappingConfig>) -> Self {
-        let ReasoningContentRemappingConfig { from, to } = positions.into();
+impl ChatCompletionReasoningRemappingState {
+    pub fn new(positions: impl Into<ChatCompletionReasoningRemappingConfig>) -> Self {
+        let ChatCompletionReasoningRemappingConfig { from, to } = positions.into();
         Self {
             from,
             to,
@@ -76,12 +82,8 @@ impl ReasoningContentRemappingState {
         }
     }
 
-    pub fn apply<T: ReasoningContentRemappingTarget>(&mut self, target: &mut T) {
-        let index = target.index();
-
-        let Some(inner) = target.inner_mut_opt() else {
-            return;
-        };
+    pub fn apply(&mut self, index: u32, inner: &mut ChatCompletionResponseMessage) {
+        let index = index as usize;
 
         let state = self.choices.entry(index).or_default();
         let was_started = state.started;
@@ -93,11 +95,11 @@ impl ReasoningContentRemappingState {
         match (state.started, state.stopped) {
             // not started, not stopped
             (false, false) => match &self.from {
-                ReasoningContentPosition::Content {
+                ChatCompletionReasoningPosition::Content {
                     start_tag,
                     stop_tag,
                 } => {
-                    let Some(content) = inner.content_mut() else {
+                    let Some(content) = inner.content.as_mut() else {
                         return;
                     };
 
@@ -139,22 +141,22 @@ impl ReasoningContentRemappingState {
                         }
                     }
                 }
-                ReasoningContentPosition::Reasoning => {
-                    reasoning_content_opt = inner.reasoning_mut().take();
+                ChatCompletionReasoningPosition::Reasoning => {
+                    reasoning_content_opt = inner.common.reasoning.take();
                     state.started = reasoning_content_opt.is_some();
                 }
-                ReasoningContentPosition::ReasoningContent => {
-                    reasoning_content_opt = inner.reasoning_content_mut().take();
+                ChatCompletionReasoningPosition::ReasoningContent => {
+                    reasoning_content_opt = inner.common.reasoning_content.take();
                     state.started = reasoning_content_opt.is_some();
                 }
             },
             // started, not stopped
             (true, false) => match &self.from {
-                ReasoningContentPosition::Content {
+                ChatCompletionReasoningPosition::Content {
                     start_tag: _,
                     stop_tag,
                 } => {
-                    let Some(content) = inner.content_mut() else {
+                    let Some(content) = inner.content.as_mut() else {
                         return;
                     };
 
@@ -180,12 +182,12 @@ impl ReasoningContentRemappingState {
                         reasoning_content_opt = Some(std::mem::take(content));
                     }
                 }
-                ReasoningContentPosition::Reasoning => {
-                    reasoning_content_opt = inner.reasoning_mut().take();
+                ChatCompletionReasoningPosition::Reasoning => {
+                    reasoning_content_opt = inner.common.reasoning.take();
                     state.stopped = reasoning_content_opt.is_none();
                 }
-                ReasoningContentPosition::ReasoningContent => {
-                    reasoning_content_opt = inner.reasoning_content_mut().take();
+                ChatCompletionReasoningPosition::ReasoningContent => {
+                    reasoning_content_opt = inner.common.reasoning_content.take();
                     state.stopped = reasoning_content_opt.is_none();
                 }
             },
@@ -200,11 +202,11 @@ impl ReasoningContentRemappingState {
         }
 
         match &self.to {
-            ReasoningContentPosition::Content {
+            ChatCompletionReasoningPosition::Content {
                 start_tag,
                 stop_tag,
             } => {
-                let content_opt = inner.content_mut();
+                let content_opt = &mut inner.content;
 
                 if let Some(mut reasoning_content) = reasoning_content_opt {
                     if state.started && !was_started {
@@ -231,14 +233,14 @@ impl ReasoningContentRemappingState {
                     }
                 }
             }
-            ReasoningContentPosition::Reasoning => {
+            ChatCompletionReasoningPosition::Reasoning => {
                 if reasoning_content_opt.is_some() {
-                    *inner.reasoning_mut() = reasoning_content_opt;
+                    inner.common.reasoning = reasoning_content_opt;
                 }
             }
-            ReasoningContentPosition::ReasoningContent => {
+            ChatCompletionReasoningPosition::ReasoningContent => {
                 if reasoning_content_opt.is_some() {
-                    *inner.reasoning_content_mut() = reasoning_content_opt;
+                    inner.common.reasoning_content = reasoning_content_opt;
                 }
             }
         }
@@ -248,17 +250,17 @@ impl ReasoningContentRemappingState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dummy::*;
+    use helpers::*;
 
     #[test]
     fn should_be_able_to_map_between_tags() {
-        let mut input = Dummy::from_content("--<herp>123</derp>asdfg");
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::content_unchecked("<herp>", "</derp>"),
-            ReasoningContentPosition::content_unchecked("FOO", "BAR"),
+        let mut input = from_content("--<herp>123</derp>asdfg");
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::content_unchecked("<herp>", "</derp>"),
+            ChatCompletionReasoningPosition::content_unchecked("FOO", "BAR"),
         ));
 
-        state.apply(&mut input);
+        state.apply(0, &mut input);
 
         assert_eq!(input.content.unwrap(), "--FOO123BARasdfg");
     }
@@ -266,41 +268,41 @@ mod tests {
     #[test]
     fn should_be_able_to_map_between_points_over_chunks() {
         let mut input = [
-            Dummy::from_content("-"),
-            Dummy::from_content("-<herp>1"),
-            Dummy::from_content("2"),
-            Dummy::from_content("3</derp>asd"),
-            Dummy::from_content("fg"),
+            from_content("-"),
+            from_content("-<herp>1"),
+            from_content("2"),
+            from_content("3</derp>asd"),
+            from_content("fg"),
         ];
 
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::content_unchecked("<herp>", "</derp>"),
-            ReasoningContentPosition::ReasoningContent,
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::content_unchecked("<herp>", "</derp>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
         ));
 
         for chunk in input.iter_mut() {
-            state.apply(chunk);
+            state.apply(0, chunk);
         }
 
         assert_eq!(
-            Dummy::from_chunks(input),
-            Dummy::from_content("--asdfg").with_reasoning_content("123")
+            from_chunks(input),
+            from_content("--asdfg").with_reasoning_content("123")
         );
     }
 
     #[test]
     fn should_map_content_tags_to_reasoning_field() {
-        let mut input = Dummy::from_content("before<think>my reasoning</think>after");
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::content_unchecked("<think>", "</think>"),
-            ReasoningContentPosition::Reasoning,
+        let mut input = from_content("before<think>my reasoning</think>after");
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+            ChatCompletionReasoningPosition::Reasoning,
         ));
 
-        state.apply(&mut input);
+        state.apply(0, &mut input);
 
         assert_eq!(
             input,
-            Dummy::from_content("beforeafter").with_reasoning("my reasoning")
+            from_content("beforeafter").with_reasoning("my reasoning")
         );
     }
 
@@ -309,208 +311,155 @@ mod tests {
         // Streaming: reasoning comes in one chunk, then a content-only chunk
         // signals reasoning is done (reasoning field goes to None → stop tag emitted).
         let mut chunks = [
-            Dummy::from_reasoning("deep thought"),
-            Dummy::from_content("after"), // reasoning is None → triggers stop
+            from_reasoning("deep thought"),
+            from_content("after"), // reasoning is None → triggers stop
         ];
 
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::Reasoning,
-            ReasoningContentPosition::content_unchecked("[THINK]", "[/THINK]"),
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::Reasoning,
+            ChatCompletionReasoningPosition::content_unchecked("[THINK]", "[/THINK]"),
         ));
 
         for chunk in chunks.iter_mut() {
-            state.apply(chunk);
+            state.apply(0, chunk);
         }
 
         assert_eq!(
-            Dummy::from_chunks(chunks),
-            Dummy::from_content("[THINK]deep thought[/THINK]after")
+            from_chunks(chunks),
+            from_content("[THINK]deep thought[/THINK]after")
         );
     }
 
     #[test]
     fn should_map_reasoning_content_to_reasoning() {
-        let mut input = Dummy::from_reasoning_content("extracted thought");
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::ReasoningContent,
-            ReasoningContentPosition::Reasoning,
+        let mut input = from_reasoning_content("extracted thought");
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::ReasoningContent,
+            ChatCompletionReasoningPosition::Reasoning,
         ));
 
-        state.apply(&mut input);
+        state.apply(0, &mut input);
 
-        assert!(input.reasoning_content.is_none());
-        assert_eq!(input.reasoning.unwrap(), "extracted thought");
+        assert!(input.common.reasoning_content.is_none());
+        assert_eq!(input.common.reasoning.unwrap(), "extracted thought");
     }
 
     #[test]
     fn should_map_reasoning_to_content_over_chunks() {
         let mut chunks = [
-            Dummy::from_reasoning("part1"),
-            Dummy::from_reasoning("part2"),
-            Dummy::from_content("hello"), // reasoning is None → stop
-            Dummy::from_content("world"),
+            from_reasoning("part1"),
+            from_reasoning("part2"),
+            from_content("hello"), // reasoning is None → stop
+            from_content("world"),
         ];
 
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::Reasoning,
-            ReasoningContentPosition::content_unchecked("<r>", "</r>"),
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::Reasoning,
+            ChatCompletionReasoningPosition::content_unchecked("<r>", "</r>"),
         ));
 
         for chunk in chunks.iter_mut() {
-            state.apply(chunk);
+            state.apply(0, chunk);
         }
 
         assert_eq!(
-            Dummy::from_chunks(chunks),
-            Dummy::from_content("<r>part1part2</r>helloworld")
+            from_chunks(chunks),
+            from_content("<r>part1part2</r>helloworld")
         );
     }
 
     #[test]
     fn should_handle_any_index() {
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::content_unchecked("<t>", "</t>"),
-            ReasoningContentPosition::ReasoningContent,
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::content_unchecked("<t>", "</t>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
         ));
 
         for index in [0, 10, 100, 1000] {
-            let mut input = Dummy::from_content("<t>ok</t>").with_index(index);
-            state.apply(&mut input);
-            assert_eq!(input.reasoning_content.unwrap(), "ok");
+            let mut input = from_content("<t>ok</t>");
+            state.apply(index, &mut input);
+            assert_eq!(input.common.reasoning_content.unwrap(), "ok");
         }
     }
 
     #[test]
     fn should_buffer_partial_tags_between_chunks() {
         let mut chunks = [
-            Dummy::from_content("me<thin"),
-            Dummy::from_content("k>thoug"),
-            Dummy::from_content("ht</thi"),
-            Dummy::from_content("nk>ssage"),
+            from_content("me<thin"),
+            from_content("k>thoug"),
+            from_content("ht</thi"),
+            from_content("nk>ssage"),
         ];
 
-        let mut state = ReasoningContentRemappingState::new((
-            ReasoningContentPosition::content_unchecked("<think>", "</think>"),
-            ReasoningContentPosition::ReasoningContent,
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
         ));
 
         for chunk in chunks.iter_mut() {
-            state.apply(chunk);
+            state.apply(0, chunk);
         }
 
         assert_eq!(
-            Dummy::from_chunks(chunks),
-            Dummy::from_content("message").with_reasoning_content("thought")
+            from_chunks(chunks),
+            from_content("message").with_reasoning_content("thought")
         );
     }
 
-    mod dummy {
-        use crate::traits::reasoning_content_remapping::ReasoningContentRemappingInnerTarget;
-
+    mod helpers {
         use super::*;
-
+        use crate::chat_completion::models::api::common::CommonChatCompletionMessage;
         use std::fmt::Display;
-        #[derive(Debug, Default, PartialEq, Eq)]
-        pub struct Dummy {
-            pub index: usize,
-            pub content: Option<String>,
-            pub reasoning_content: Option<String>,
-            pub reasoning: Option<String>,
-        }
 
-        impl Dummy {
-            pub fn from_content(content: impl Display) -> Self {
-                Self {
-                    content: Some(content.to_string()),
-                    ..Dummy::default()
-                }
-            }
-
-            pub fn from_reasoning(reasoning: impl Display) -> Dummy {
-                Dummy {
-                    reasoning: Some(reasoning.to_string()),
-                    ..Dummy::default()
-                }
-            }
-
-            pub fn from_reasoning_content(reasoning_content: impl Display) -> Dummy {
-                Dummy {
-                    reasoning_content: Some(reasoning_content.to_string()),
-                    ..Dummy::default()
-                }
-            }
-
-            pub fn with_index(mut self, index: usize) -> Self {
-                self.index = index;
-                self
-            }
-
-            pub fn with_reasoning(mut self, reasoning: impl Display) -> Self {
-                self.reasoning = Some(reasoning.to_string());
-                self
-            }
-
-            pub fn with_reasoning_content(mut self, reasoning_content: impl Display) -> Self {
-                self.reasoning_content = Some(reasoning_content.to_string());
-                self
-            }
-
-            pub fn from_chunks(chunks: impl IntoIterator<Item = Self>) -> Self {
-                chunks
-                    .into_iter()
-                    .fold(Dummy::default(), |prev, curr| prev + curr)
+        fn message() -> ChatCompletionResponseMessage {
+            ChatCompletionResponseMessage {
+                content: None,
+                common: CommonChatCompletionMessage {
+                    tool_calls: None,
+                    reasoning_content: None,
+                    reasoning: None,
+                    additional_properties: Default::default(),
+                },
             }
         }
 
-        impl std::ops::Add for Dummy {
-            type Output = Dummy;
+        pub fn from_content(content: impl Display) -> ChatCompletionResponseMessage {
+            ChatCompletionResponseMessage {
+                content: Some(content.to_string()),
+                ..message()
+            }
+        }
 
-            fn add(mut self, rhs: Self) -> Self::Output {
-                self.content = match (self.content, rhs.content) {
-                    (Some(s), Some(r)) => Some(format!("{s}{r}")),
-                    (Some(s), None) => Some(s),
-                    (None, Some(r)) => Some(r),
-                    (None, None) => None,
-                };
-                self.reasoning_content = match (self.reasoning_content, rhs.reasoning_content) {
-                    (Some(s), Some(r)) => Some(format!("{s}{r}")),
-                    (Some(s), None) => Some(s),
-                    (None, Some(r)) => Some(r),
-                    (None, None) => None,
-                };
-                self.reasoning = match (self.reasoning, rhs.reasoning) {
-                    (Some(s), Some(r)) => Some(format!("{s}{r}")),
-                    (Some(s), None) => Some(s),
-                    (None, Some(r)) => Some(r),
-                    (None, None) => None,
-                };
+        pub fn from_reasoning(reasoning: impl Display) -> ChatCompletionResponseMessage {
+            message().with_reasoning(reasoning)
+        }
+
+        pub fn from_reasoning_content(
+            reasoning_content: impl Display,
+        ) -> ChatCompletionResponseMessage {
+            message().with_reasoning_content(reasoning_content)
+        }
+
+        pub fn from_chunks(
+            chunks: impl IntoIterator<Item = ChatCompletionResponseMessage>,
+        ) -> ChatCompletionResponseMessage {
+            chunks.into_iter().fold(message(), |prev, curr| prev + curr)
+        }
+
+        pub trait With {
+            fn with_reasoning(self, reasoning: impl Display) -> Self;
+            fn with_reasoning_content(self, reasoning_content: impl Display) -> Self;
+        }
+
+        impl With for ChatCompletionResponseMessage {
+            fn with_reasoning(mut self, reasoning: impl Display) -> Self {
+                self.common.reasoning = Some(reasoning.to_string());
                 self
             }
-        }
 
-        impl ReasoningContentRemappingInnerTarget for Dummy {
-            fn content_mut(&mut self) -> &mut Option<String> {
-                &mut self.content
-            }
-
-            fn reasoning_content_mut(&mut self) -> &mut Option<String> {
-                &mut self.reasoning_content
-            }
-
-            fn reasoning_mut(&mut self) -> &mut Option<String> {
-                &mut self.reasoning
-            }
-        }
-
-        impl ReasoningContentRemappingTarget for Dummy {
-            type Inner = Dummy;
-
-            fn index(&self) -> usize {
-                self.index
-            }
-
-            fn inner_mut_opt(&mut self) -> Option<&mut Self::Inner> {
-                Some(self)
+            fn with_reasoning_content(mut self, reasoning_content: impl Display) -> Self {
+                self.common.reasoning_content = Some(reasoning_content.to_string());
+                self
             }
         }
     }

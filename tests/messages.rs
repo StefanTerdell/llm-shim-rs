@@ -318,9 +318,9 @@ mod non_streaming {
     }
 }
 
-mod thinking_remapping {
+mod reasoning_remapping {
     use super::*;
-    use llm_stream_map::messages::models::lib::options::thinking_remapping::ThinkingPosition;
+    use llm_stream_map::messages::models::lib::options::reasoning_remapping::MessagesReasoningPosition;
 
     #[tokio::test]
     async fn thinking_blocks_become_tags_in_the_text_stream() {
@@ -338,9 +338,9 @@ mod thinking_remapping {
         ]))
         .await;
 
-        let options = MessagesOptions::default().with_thinking_remapping((
-            ThinkingPosition::ThinkingBlock,
-            ThinkingPosition::text_unchecked("<think>", "</think>"),
+        let options = MessagesOptions::default().with_reasoning_remapping((
+            MessagesReasoningPosition::ThinkingBlock,
+            MessagesReasoningPosition::text_unchecked("<think>", "</think>"),
         ));
 
         let events = collect_with(&server, request(json!({})), options).await;
@@ -377,9 +377,9 @@ mod thinking_remapping {
         ]))
         .await;
 
-        let options = MessagesOptions::default().with_thinking_remapping((
-            ThinkingPosition::text_unchecked("<think>", "</think>"),
-            ThinkingPosition::ThinkingBlock,
+        let options = MessagesOptions::default().with_reasoning_remapping((
+            MessagesReasoningPosition::text_unchecked("<think>", "</think>"),
+            MessagesReasoningPosition::ThinkingBlock,
         ));
 
         let response =

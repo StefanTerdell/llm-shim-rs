@@ -217,7 +217,7 @@ mod non_streaming {
         models::{
             api::request::non_streaming::NonStreamingChatCompletionRequestBody,
             lib::options::{
-                ChatCompletionOptions, reasoning_content_remapping::ReasoningContentPosition,
+                ChatCompletionOptions, reasoning_remapping::ChatCompletionReasoningPosition,
             },
         },
         non_streaming::non_streaming_chat_completion,
@@ -320,9 +320,9 @@ mod non_streaming {
         ]))
         .await;
 
-        let options = ChatCompletionOptions::default().with_remap_reasoning((
-            ReasoningContentPosition::content_unchecked("<think>", "</think>"),
-            ReasoningContentPosition::ReasoningContent,
+        let options = ChatCompletionOptions::default().with_reasoning_remapping((
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
         ));
 
         let response = non_streaming_chat_completion(&server.url, request(), options)

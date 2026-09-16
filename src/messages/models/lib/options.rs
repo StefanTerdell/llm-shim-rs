@@ -1,10 +1,10 @@
 use reqwest::Client;
 use std::fmt::Display;
 use stefans_utils::{prelude::AsClone, secret::Secret};
-pub mod thinking_remapping;
+pub mod reasoning_remapping;
 
 use crate::{
-    messages::models::lib::options::thinking_remapping::ThinkingRemappingConfig,
+    messages::models::lib::options::reasoning_remapping::MessagesReasoningRemappingConfig,
     traits::max_tps::MaxTps,
 };
 
@@ -15,7 +15,7 @@ pub struct MessagesOptions<'a> {
     pub bearer_token: Option<Secret<String>>,
     pub anthropic_version: Option<String>,
     pub tps_throttler: Option<&'a dyn MaxTps>,
-    pub thinking_remapping: Option<ThinkingRemappingConfig>,
+    pub reasoning_remapping: Option<MessagesReasoningRemappingConfig>,
 }
 
 impl MessagesOptions<'_> {
@@ -66,16 +66,16 @@ impl MessagesOptions<'_> {
         self
     }
 
-    pub fn with_thinking_remapping(
+    pub fn with_reasoning_remapping(
         mut self,
-        thinking_remapping: impl Into<ThinkingRemappingConfig>,
+        reasoning_remapping: impl Into<MessagesReasoningRemappingConfig>,
     ) -> Self {
-        self.thinking_remapping = Some(thinking_remapping.into());
+        self.reasoning_remapping = Some(reasoning_remapping.into());
         self
     }
 
-    pub fn without_thinking_remapping(mut self) -> Self {
-        self.thinking_remapping = None;
+    pub fn without_reasoning_remapping(mut self) -> Self {
+        self.reasoning_remapping = None;
         self
     }
 }

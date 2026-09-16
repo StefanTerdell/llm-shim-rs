@@ -1,12 +1,9 @@
-use crate::{
-    chat_completion::models::api::{
-        common::ChatCompletionUsage,
-        response::{
-            common::{ChatCompletionResponseMessage, CommonChatCompletionChoice},
-            streaming::StreamingChatCompletionChoice,
-        },
+use crate::chat_completion::models::api::{
+    common::ChatCompletionUsage,
+    response::{
+        common::{ChatCompletionResponseMessage, CommonChatCompletionChoice},
+        streaming::StreamingChatCompletionChoice,
     },
-    traits::reasoning_content_remapping::ReasoningContentRemappingTarget,
 };
 
 use crate::stats::StreamStats;
@@ -36,30 +33,6 @@ pub struct NonStreamingChatCompletionChoice {
     pub message: ChatCompletionResponseMessage,
     #[serde(flatten)]
     pub common: CommonChatCompletionChoice,
-}
-
-impl ReasoningContentRemappingTarget for NonStreamingChatCompletionChoice {
-    type Inner = ChatCompletionResponseMessage;
-
-    fn index(&self) -> usize {
-        self.common.index as usize
-    }
-
-    fn inner_mut_opt(&mut self) -> Option<&mut Self::Inner> {
-        Some(&mut self.message)
-    }
-}
-
-impl ReasoningContentRemappingTarget for StreamingChatCompletionChoice {
-    type Inner = ChatCompletionResponseMessage;
-
-    fn index(&self) -> usize {
-        self.common.index as usize
-    }
-
-    fn inner_mut_opt(&mut self) -> Option<&mut Self::Inner> {
-        Some(&mut self.delta)
-    }
 }
 
 impl From<StreamingChatCompletionChoice> for NonStreamingChatCompletionChoice {

@@ -31,30 +31,25 @@ pub async fn streaming_chat_completion<'a>(
 ) -> Result<StreamingChatCompletionResponse<'a>, Error> {
     let mut body = body.into();
 
-    let (
-        client,
-        bearer_token,
-        max_tps,
-        mut reasoning_content_remapping_state,
-        output_token_counting,
-    ) = match options.into() {
-        Some(options) => (
-            options.client.unwrap_or_default(),
-            options.bearer_token,
-            options.max_tps,
-            options
-                .reasoning_content_remapping
-                .map(|rcr| rcr.into_state()),
-            options.output_token_counting,
-        ),
-        None => (
-            Default::default(),
-            None,
-            None,
-            None,
-            OutputTokenCounting::default(),
-        ),
-    };
+    let (client, bearer_token, max_tps, mut reasoning_remapping_state, output_token_counting) =
+        match options.into() {
+            Some(options) => (
+                options.client.unwrap_or_default(),
+                options.bearer_token,
+                options.max_tps,
+                options
+                    .reasoning_remapping
+                    .map(|config| config.into_state()),
+                options.output_token_counting,
+            ),
+            None => (
+                Default::default(),
+                None,
+                None,
+                None,
+                OutputTokenCounting::default(),
+            ),
+        };
 
     let requested_logprobs = body.common.logprobs.as_bool();
     let requested_usage = body
@@ -120,8 +115,8 @@ pub async fn streaming_chat_completion<'a>(
                         chunk_tokens += count;
                     }
 
-                    if let Some(rcr_state) = &mut reasoning_content_remapping_state {
-                        rcr_state.apply(choice);
+                    if let Some(state) = &mut reasoning_remapping_state {
+                        state.apply(choice.common.index, &mut choice.delta);
                     }
                 }
 
