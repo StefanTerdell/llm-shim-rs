@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::sync::Arc;
 
 #[async_trait]
 pub trait MaxTps: Send + Sync {
@@ -13,12 +14,32 @@ impl MaxTps for f32 {
 }
 
 #[async_trait]
-impl MaxTps for Option<&dyn MaxTps> {
+impl<T: MaxTps> MaxTps for Option<T> {
     async fn get(&self) -> Option<f32> {
-        if let Some(inner) = self {
-            inner.get().await
-        } else {
-            None
+        match self {
+            Some(inner) => inner.get().await,
+            None => None,
         }
+    }
+}
+
+#[async_trait]
+impl<T: MaxTps + ?Sized> MaxTps for &T {
+    async fn get(&self) -> Option<f32> {
+        (**self).get().await
+    }
+}
+
+#[async_trait]
+impl<T: MaxTps + ?Sized> MaxTps for Box<T> {
+    async fn get(&self) -> Option<f32> {
+        (**self).get().await
+    }
+}
+
+#[async_trait]
+impl<T: MaxTps + ?Sized> MaxTps for Arc<T> {
+    async fn get(&self) -> Option<f32> {
+        (**self).get().await
     }
 }

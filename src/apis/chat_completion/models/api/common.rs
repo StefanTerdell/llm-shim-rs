@@ -1,4 +1,7 @@
-use crate::{stats::StreamStats, traits::or_merge::OrMerge};
+use crate::{
+    stats::StreamStats,
+    traits::{merge::Merge, or_merge::OrMerge},
+};
 
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -21,28 +24,67 @@ impl Add for CommonChatCompletionMessage {
             tool_calls: self.tool_calls.or_merge(rhs.tool_calls),
             reasoning_content: self.reasoning_content.or_merge(rhs.reasoning_content),
             reasoning: self.reasoning.or_merge(rhs.reasoning),
-            additional_properties: self
-                .additional_properties
-                .into_iter()
-                .chain(rhs.additional_properties)
-                .collect(),
+            additional_properties: self.additional_properties.merge(rhs.additional_properties),
         }
     }
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct ChatCompletionRequestMessageToolCall {
+    pub index: Option<u32>,
     pub function: ChatCompletionRequestMessageFunctionToolCall,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }
 
+impl Merge for ChatCompletionRequestMessageToolCall {
+    fn merge(self, rhs: Self) -> Self {
+        Self {
+            index: rhs.index.or(self.index),
+            function: self.function.merge(rhs.function),
+            additional_properties: self.additional_properties.merge(rhs.additional_properties),
+        }
+    }
+}
+
+impl Merge for Vec<ChatCompletionRequestMessageToolCall> {
+    fn merge(mut self, rhs: Self) -> Self {
+        for delta in rhs {
+            let position = delta
+                .index
+                .and_then(|index| self.iter().position(|call| call.index == Some(index)));
+
+            match position {
+                Some(position) => {
+                    let current = self.remove(position);
+                    self.insert(position, current.merge(delta));
+                }
+                None => self.push(delta),
+            }
+        }
+
+        self
+    }
+}
+
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct ChatCompletionRequestMessageFunctionToolCall {
-    pub name: String,
-    pub arguments: String,
+    pub name: Option<String>,
+    pub arguments: Option<String>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
+}
+
+impl Merge for ChatCompletionRequestMessageFunctionToolCall {
+    fn merge(self, rhs: Self) -> Self {
+        Self {
+            name: self.name.or_merge(rhs.name),
+            arguments: self.arguments.or_merge(rhs.arguments),
+            additional_properties: self.additional_properties.merge(rhs.additional_properties),
+        }
+    }
 }
 
 #[derive(..ApiModel, Default)]

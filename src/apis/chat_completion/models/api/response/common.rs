@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{
     apis::chat_completion::models::api::common::CommonChatCompletionMessage,
-    traits::or_merge::OrMerge,
+    traits::{merge::Merge, or_merge::OrMerge},
 };
 
 #[serde_with::skip_serializing_none]
@@ -43,11 +43,7 @@ impl Add for CommonChatCompletionChoice {
         Self {
             index: rhs.index,
             logprobs: self.logprobs.or_merge(rhs.logprobs),
-            additional_properties: self
-                .additional_properties
-                .into_iter()
-                .chain(rhs.additional_properties)
-                .collect(),
+            additional_properties: self.additional_properties.merge(rhs.additional_properties),
         }
     }
 }

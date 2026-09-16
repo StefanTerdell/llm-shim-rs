@@ -269,6 +269,81 @@ mod non_streaming {
         assert_eq!(sent["stream"], json!(true));
     }
 
+    fn tool_call_delta(index: u32, tool_call: Value) -> Value {
+        json!({"choices": [{"index": index, "delta": {"tool_calls": [tool_call]}}]})
+    }
+
+    #[tokio::test]
+    async fn folds_a_streamed_tool_call_into_one_call() {
+        let server = MockSse::start(Script::sse([
+            data(json!({"choices": [{"index": 0, "delta": {"role": "assistant", "content": null}}]})),
+            data(tool_call_delta(0, json!({"index": 0, "id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": ""}}))),
+            data(tool_call_delta(0, json!({"index": 0, "function": {"arguments": "{\"ci"}}))),
+            data(tool_call_delta(0, json!({"index": 0, "function": {"arguments": "ty\": \"Paris\"}"}}))),
+            data(json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]})),
+            done(),
+        ]))
+        .await;
+
+        let response = non_streaming_chat_completion(&server.url, request(), None)
+            .await
+            .unwrap();
+
+        let tool_calls = response.body.choices[0]
+            .message
+            .common
+            .tool_calls
+            .as_ref()
+            .unwrap();
+        assert_eq!(tool_calls.len(), 1, "tool calls: {tool_calls:?}");
+        assert_eq!(tool_calls[0].index, Some(0));
+        assert_eq!(tool_calls[0].function.name.as_deref(), Some("get_weather"));
+        assert_eq!(
+            tool_calls[0].function.arguments.as_deref(),
+            Some("{\"city\": \"Paris\"}")
+        );
+        assert_eq!(tool_calls[0].additional_properties["id"], json!("call_1"));
+        assert_eq!(
+            tool_calls[0].additional_properties["type"],
+            json!("function")
+        );
+    }
+
+    #[tokio::test]
+    async fn folds_interleaved_parallel_tool_calls_by_index() {
+        let server = MockSse::start(Script::sse([
+            data(tool_call_delta(0, json!({"index": 0, "id": "call_a", "type": "function", "function": {"name": "f", "arguments": ""}}))),
+            data(tool_call_delta(0, json!({"index": 1, "id": "call_b", "type": "function", "function": {"name": "g", "arguments": ""}}))),
+            data(tool_call_delta(0, json!({"index": 0, "function": {"arguments": "{\"a\":"}}))),
+            data(tool_call_delta(0, json!({"index": 1, "function": {"arguments": "{\"b\":"}}))),
+            data(tool_call_delta(0, json!({"index": 0, "function": {"arguments": "1}"}}))),
+            data(tool_call_delta(0, json!({"index": 1, "function": {"arguments": "2}"}}))),
+            done(),
+        ]))
+        .await;
+
+        let response = non_streaming_chat_completion(&server.url, request(), None)
+            .await
+            .unwrap();
+
+        let tool_calls = response.body.choices[0]
+            .message
+            .common
+            .tool_calls
+            .as_ref()
+            .unwrap();
+        assert_eq!(tool_calls.len(), 2);
+        assert_eq!(
+            tool_calls[0].function.arguments.as_deref(),
+            Some("{\"a\":1}")
+        );
+        assert_eq!(
+            tool_calls[1].function.arguments.as_deref(),
+            Some("{\"b\":2}")
+        );
+        assert_eq!(tool_calls[1].function.name.as_deref(), Some("g"));
+    }
+
     #[tokio::test]
     async fn falls_back_to_counted_tokens_when_server_sends_no_usage() {
         let server = MockSse::start(Script::sse([

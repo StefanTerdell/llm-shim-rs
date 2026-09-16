@@ -1,6 +1,6 @@
 [package]
 name = "llm-shim"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Thin passthrough layer for LLM HTTP APIs with TPS throttling, token stats and reasoning remapping"
 license = "MIT"

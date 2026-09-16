@@ -63,9 +63,17 @@ impl EstimateTokens for CommonChatCompletionMessage {
 
         // Tool calls cost tokens too: fn name + the arguments JSON string.
         for call in self.tool_calls.iter().flatten() {
-            total += call.function.name.estimate_tokens()
-                + call.function.arguments.estimate_tokens()
-                + 4; // rough per-call structural framing
+            total += call
+                .function
+                .name
+                .as_deref()
+                .map_or(0, EstimateTokens::estimate_tokens)
+                + call
+                    .function
+                    .arguments
+                    .as_deref()
+                    .map_or(0, EstimateTokens::estimate_tokens)
+                + 4;
         }
 
         total
