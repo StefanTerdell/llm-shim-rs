@@ -1,7 +1,7 @@
 mod support;
 
-use llm_stream_map::{
-    responses::{
+use llm_shim::{
+    apis::responses::{
         models::{
             api::{
                 common::{ContentPart, OutputItem, ReasoningPart},
@@ -297,7 +297,7 @@ mod non_streaming {
 
 mod reasoning_remapping {
     use super::*;
-    use llm_stream_map::responses::models::lib::options::reasoning_remapping::ResponsesReasoningPosition;
+    use llm_shim::apis::responses::models::lib::options::reasoning_remapping::ResponsesReasoningPosition;
 
     #[tokio::test]
     async fn summaries_become_tags_in_the_text_stream_and_in_the_completed_output() {
@@ -400,8 +400,8 @@ mod reasoning_remapping {
 mod throttling_and_dispatch {
     use super::*;
     use async_trait::async_trait;
-    use llm_stream_map::{
-        responses::{models::api::response::ResponsesResponse, responses},
+    use llm_shim::{
+        apis::responses::{models::api::response::ResponsesResponse, responses},
         traits::max_tps::MaxTps,
     };
     use std::time::{Duration, Instant};

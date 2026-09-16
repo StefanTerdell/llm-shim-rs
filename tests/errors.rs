@@ -1,7 +1,7 @@
 mod support;
 
-use llm_stream_map::{
-    chat_completion::{
+use llm_shim::{
+    apis::chat_completion::{
         models::lib::streaming::response::StreamingChatCompletionEvent,
         streaming::streaming_chat_completion,
     },

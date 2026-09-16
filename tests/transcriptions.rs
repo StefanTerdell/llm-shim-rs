@@ -1,10 +1,8 @@
 mod support;
 
 use async_trait::async_trait;
-use llm_stream_map::{
-    stats::StreamStats,
-    traits::max_tps::MaxTps,
-    transcriptions::{
+use llm_shim::{
+    apis::transcriptions::{
         models::{
             api::{
                 request::{AudioFile, TranscriptionsFields, TranscriptionsRequest},
@@ -21,6 +19,8 @@ use llm_stream_map::{
         streaming::streaming_transcriptions,
         transcriptions,
     },
+    stats::StreamStats,
+    traits::max_tps::MaxTps,
 };
 use serde_json::json;
 use std::time::{Duration, Instant};
@@ -227,7 +227,7 @@ async fn streams_deltas_then_done_with_exact_usage() {
 
 #[tokio::test]
 async fn streams_a_file_from_disk_without_buffering_it_first() {
-    let dir = std::env::temp_dir().join(format!("llm-stream-map-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("llm-shim-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("speech.mp3");
     std::fs::write(&path, FAKE_WAV).unwrap();

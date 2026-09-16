@@ -1,8 +1,8 @@
 mod support;
 
 use async_trait::async_trait;
-use llm_stream_map::{
-    chat_completion::{
+use llm_shim::{
+    apis::chat_completion::{
         chat_completion,
         models::{
             api::response::ChatCompletionResponse,
@@ -80,7 +80,7 @@ async fn estimate_counting_leaves_logprobs_untouched_in_the_request() {
     assert!(sent.get("logprobs").is_none(), "sent: {sent}");
     assert_eq!(sent["stream_options"]["include_usage"], json!(true));
 
-    let llm_stream_map::chat_completion::models::lib::streaming::response::StreamingChatCompletionEvent::Done { stats } =
+    let llm_shim::apis::chat_completion::models::lib::streaming::response::StreamingChatCompletionEvent::Done { stats } =
         events.last().unwrap()
     else {
         panic!("expected Done");

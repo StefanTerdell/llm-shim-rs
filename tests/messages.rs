@@ -1,8 +1,7 @@
 mod support;
 
-use llm_stream_map::{
-    error::Error,
-    messages::{
+use llm_shim::{
+    apis::messages::{
         models::{
             api::{
                 common::{ContentBlock, ContentBlockDelta},
@@ -14,6 +13,7 @@ use llm_stream_map::{
         non_streaming::non_streaming_messages,
         streaming::streaming_messages,
     },
+    error::Error,
     stats::StreamStats,
 };
 use serde_json::json;
@@ -320,7 +320,7 @@ mod non_streaming {
 
 mod reasoning_remapping {
     use super::*;
-    use llm_stream_map::messages::models::lib::options::reasoning_remapping::MessagesReasoningPosition;
+    use llm_shim::apis::messages::models::lib::options::reasoning_remapping::MessagesReasoningPosition;
 
     #[tokio::test]
     async fn thinking_blocks_become_tags_in_the_text_stream() {
@@ -400,8 +400,8 @@ mod reasoning_remapping {
 mod throttling_and_dispatch {
     use super::*;
     use async_trait::async_trait;
-    use llm_stream_map::{
-        messages::{messages, models::api::response::MessagesResponse},
+    use llm_shim::{
+        apis::messages::{messages, models::api::response::MessagesResponse},
         traits::max_tps::MaxTps,
     };
     use std::time::{Duration, Instant};

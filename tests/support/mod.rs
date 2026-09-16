@@ -259,7 +259,7 @@ async fn handler(State(state): State<AppState>, request: Request) -> Response {
 /// A minimal streaming chat completion request, with `extra` merged into the body.
 pub fn streaming_request(
     extra: Value,
-) -> llm_stream_map::chat_completion::models::api::request::streaming::StreamingChatCompletionRequestBody{
+) -> llm_shim::apis::chat_completion::models::api::request::streaming::StreamingChatCompletionRequestBody{
     let mut body = serde_json::json!({
         "model": "test-model",
         "stream": true,
@@ -281,7 +281,7 @@ pub mod anthropic {
 
     pub fn request(
         extra: Value,
-    ) -> llm_stream_map::messages::models::api::request::streaming::StreamingMessagesRequestBody
+    ) -> llm_shim::apis::messages::models::api::request::streaming::StreamingMessagesRequestBody
     {
         let mut body = serde_json::json!({
             "model": "test-model",
@@ -295,7 +295,7 @@ pub mod anthropic {
         serde_json::from_value(body).unwrap()
     }
 
-    pub fn non_streaming_request() -> llm_stream_map::messages::models::api::request::non_streaming::NonStreamingMessagesRequestBody{
+    pub fn non_streaming_request() -> llm_shim::apis::messages::models::api::request::non_streaming::NonStreamingMessagesRequestBody{
         serde_json::from_value(serde_json::json!({
             "model": "test-model",
             "max_tokens": 64,
@@ -383,7 +383,7 @@ pub mod openai_responses {
 
     pub fn request(
         extra: Value,
-    ) -> llm_stream_map::responses::models::api::request::streaming::StreamingResponsesRequestBody
+    ) -> llm_shim::apis::responses::models::api::request::streaming::StreamingResponsesRequestBody
     {
         let mut body = serde_json::json!({"model": "test-model", "stream": true, "input": "hello"});
         body.as_object_mut()
@@ -392,7 +392,7 @@ pub mod openai_responses {
         serde_json::from_value(body).unwrap()
     }
 
-    pub fn non_streaming_request() -> llm_stream_map::responses::models::api::request::non_streaming::NonStreamingResponsesRequestBody{
+    pub fn non_streaming_request() -> llm_shim::apis::responses::models::api::request::non_streaming::NonStreamingResponsesRequestBody{
         serde_json::from_value(serde_json::json!({"model": "test-model", "input": "hello"}))
             .unwrap()
     }

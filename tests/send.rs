@@ -1,6 +1,6 @@
 mod support;
 
-use llm_stream_map::chat_completion::{
+use llm_shim::apis::chat_completion::{
     models::lib::streaming::response::StreamingChatCompletionEvent,
     non_streaming::non_streaming_chat_completion, streaming::streaming_chat_completion,
 };
@@ -37,7 +37,7 @@ async fn non_streaming_future_can_be_spawned() {
     let url = server.url.clone();
 
     let response = tokio::spawn(async move {
-        let body: llm_stream_map::chat_completion::models::api::request::non_streaming::NonStreamingChatCompletionRequestBody =
+        let body: llm_shim::apis::chat_completion::models::api::request::non_streaming::NonStreamingChatCompletionRequestBody =
             serde_json::from_value(json!({"model": "m", "messages": [{"role": "user", "content": "x"}]})).unwrap();
         non_streaming_chat_completion(&url, body, None).await.unwrap()
     })

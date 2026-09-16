@@ -1,8 +1,8 @@
 mod support;
 
 use async_trait::async_trait;
-use llm_stream_map::{
-    embeddings::{
+use llm_shim::{
+    apis::embeddings::{
         embeddings,
         models::{
             api::request::{EmbeddingsInput, EmbeddingsRequestBody},

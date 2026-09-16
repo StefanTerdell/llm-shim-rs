@@ -1,6 +1,6 @@
 mod support;
 
-use llm_stream_map::chat_completion::{
+use llm_shim::apis::chat_completion::{
     models::{
         api::request::streaming::StreamingChatCompletionRequestBody,
         lib::streaming::response::StreamingChatCompletionEvent,
@@ -90,7 +90,7 @@ fn delta_with_logprobs(index: u32, content: &str, tokens: usize) -> Value {
     }]})
 }
 
-fn chunks(events: &[StreamingChatCompletionEvent]) -> Vec<&llm_stream_map::chat_completion::models::api::response::streaming::StreamingChatCompletionChunk>{
+fn chunks(events: &[StreamingChatCompletionEvent]) -> Vec<&llm_shim::apis::chat_completion::models::api::response::streaming::StreamingChatCompletionChunk>{
     events
         .iter()
         .filter_map(|e| match e {
@@ -101,7 +101,7 @@ fn chunks(events: &[StreamingChatCompletionEvent]) -> Vec<&llm_stream_map::chat_
         .collect()
 }
 
-fn done_stats(events: &[StreamingChatCompletionEvent]) -> &llm_stream_map::stats::StreamStats {
+fn done_stats(events: &[StreamingChatCompletionEvent]) -> &llm_shim::stats::StreamStats {
     match events.last().unwrap() {
         StreamingChatCompletionEvent::Done { stats } => stats,
         _ => panic!("last event should be Done"),
@@ -213,7 +213,7 @@ async fn error_chunk_yields_chunk_error_and_ends_stream() {
 
 mod non_streaming {
     use super::*;
-    use llm_stream_map::chat_completion::{
+    use llm_shim::apis::chat_completion::{
         models::{
             api::request::non_streaming::NonStreamingChatCompletionRequestBody,
             lib::options::{
@@ -341,8 +341,8 @@ mod non_streaming {
 mod throttling {
     use super::*;
     use async_trait::async_trait;
-    use llm_stream_map::{
-        chat_completion::models::lib::options::ChatCompletionOptions, traits::max_tps::MaxTps,
+    use llm_shim::{
+        apis::chat_completion::models::lib::options::ChatCompletionOptions, traits::max_tps::MaxTps,
     };
     use std::time::{Duration, Instant};
 

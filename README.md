@@ -1,0 +1,5 @@
+# llm-shim
+
+A thin Rust layer in front of LLM HTTP APIs that changes only what it has to and passes everything else through byte for byte. It speaks OpenAI chat completions, responses, embeddings and audio transcriptions, Anthropic messages, and Jina reranking, against the official servers or any compatible one such as vLLM, llama.cpp or Ollama.
+
+On top of plain passthrough it adds (dumb and lazy) tokens-per-second throttling driven by a value you control at runtime, per-request and per-chunk stats with exact token counts where the server provides them and (dumb and lazy) estimates where it doesn't, non-streaming responses derived from the streaming ones, and remapping of reasoning between the places different servers put it, such as `<think>` tags in text, `reasoning_content` fields, Anthropic Messages thinking blocks or OpenAI Responses reasoning items. The API models are limited to only the fields that are written or read. All other fields go in a value map (`#[serde(flatten) additional_properties: IndexMap<String, serde_json::Value>`) for passthrough.

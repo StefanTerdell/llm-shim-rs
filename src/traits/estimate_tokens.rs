@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::{
-    chat_completion::models::api::{
+    apis::chat_completion::models::api::{
         common::CommonChatCompletionMessage,
         request::common::{
             ChatCompletionRequestMessage, ChatCompletionRequestMessageContent,
@@ -9,13 +9,13 @@ use crate::{
         },
         response::common::ChatCompletionResponseMessage,
     },
-    embeddings::models::api::request::{EmbeddingsInput, EmbeddingsRequestBody},
-    messages::models::api::{
+    apis::embeddings::models::api::request::{EmbeddingsInput, EmbeddingsRequestBody},
+    apis::messages::models::api::{
         common::{ContentBlock, ContentBlockDelta},
         request::common::{CommonMessagesRequestBody, MessageContent, MessageParam},
     },
-    rerank::models::api::request::RerankRequestBody,
-    responses::models::api::{
+    apis::rerank::models::api::request::RerankRequestBody,
+    apis::responses::models::api::{
         common::{ContentPart, OutputItem, ReasoningPart},
         request::common::{CommonResponsesRequestBody, ResponsesInput},
     },

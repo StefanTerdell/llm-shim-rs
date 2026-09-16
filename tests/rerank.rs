@@ -1,8 +1,8 @@
 mod support;
 
 use async_trait::async_trait;
-use llm_stream_map::{
-    rerank::{
+use llm_shim::{
+    apis::rerank::{
         models::{api::request::RerankRequestBody, lib::options::RerankOptions},
         rerank,
     },
