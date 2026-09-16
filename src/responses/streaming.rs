@@ -64,7 +64,7 @@ pub async fn streaming_responses<'a>(
                 | ResponsesStreamEvent::Completed { response, .. }
                 | ResponsesStreamEvent::Incomplete { response, .. }
                 | ResponsesStreamEvent::Failed { response, .. } => {
-                    if let Some(usage) = &response.usage {
+                    if let Some(Some(usage)) = &response.usage {
                         if let Some(input_tokens) = usage.input_tokens {
                             stats.input_tokens_is_estimate = false;
                             stats.input_tokens = input_tokens;
@@ -82,6 +82,7 @@ pub async fn streaming_responses<'a>(
                             response
                                 .error
                                 .as_ref()
+                                .and_then(|e| e.as_ref())
                                 .map(|e| e.to_string())
                                 .unwrap_or_else(|| "response.failed".to_string()),
                         );

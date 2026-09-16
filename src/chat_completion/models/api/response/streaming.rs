@@ -6,13 +6,11 @@ use crate::chat_completion::models::api::{
     response::common::{ChatCompletionResponseMessage, CommonChatCompletionChoice},
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct StreamingChatCompletionChunk {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub choices: Option<Vec<StreamingChatCompletionChoice>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<ChatCompletionUsage>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

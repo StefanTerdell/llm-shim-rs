@@ -5,9 +5,9 @@ use crate::responses::models::api::request::{
     streaming::StreamingResponsesRequestBody,
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct NonStreamingResponsesRequestBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<False>,
     #[serde(flatten)]
     pub common: CommonResponsesRequestBody,

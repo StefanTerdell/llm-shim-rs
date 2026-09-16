@@ -3,12 +3,12 @@ use serde_json::Value;
 
 use crate::messages::models::api::common::ContentBlock;
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonMessagesRequestBody {
     pub model: String,
     pub max_tokens: u32,
     pub messages: Vec<MessageParam>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<MessageContent>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

@@ -43,7 +43,7 @@ impl ResponseAssembler {
                         .collect();
                 }
 
-                if let Some(error) = &self.body.error
+                if let Some(Some(error)) = &self.body.error
                     && !error.is_null()
                 {
                     self.error = Some(error.clone());
@@ -388,8 +388,8 @@ mod tests {
 
         let body = a.into_body();
         assert_eq!(body.id.as_deref(), Some("resp_1"));
-        assert_eq!(body.status.as_deref(), Some("completed"));
-        assert_eq!(body.usage.unwrap().output_tokens, Some(5));
+        assert_eq!(body.status.flatten().as_deref(), Some("completed"));
+        assert_eq!(body.usage.flatten().unwrap().output_tokens, Some(5));
         assert_eq!(
             serde_json::to_value(&body.output).unwrap(),
             completed_output
@@ -455,7 +455,7 @@ mod tests {
 
         assert_eq!(a.error().unwrap()["message"], json!("boom"));
         let body = a.into_body();
-        assert_eq!(body.status.as_deref(), Some("failed"));
+        assert_eq!(body.status.flatten().as_deref(), Some("failed"));
         assert_eq!(body.output.len(), 1);
     }
 }

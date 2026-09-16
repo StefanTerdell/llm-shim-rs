@@ -1,28 +1,27 @@
 use indexmap::IndexMap;
 use serde_json::Value;
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct ResponsesUsage {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 #[serde(tag = "type")]
 pub enum OutputItem {
     #[serde(rename = "message")]
     Message {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         role: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         status: Option<String>,
         #[serde(default)]
         content: Vec<ContentPart>,
@@ -31,27 +30,27 @@ pub enum OutputItem {
     },
     #[serde(rename = "reasoning")]
     Reasoning {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         id: Option<String>,
         #[serde(default)]
         summary: Vec<ReasoningPart>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         content: Option<Vec<ReasoningPart>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         status: Option<String>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "function_call")]
     FunctionCall {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         call_id: Option<String>,
         name: String,
         #[serde(default)]
         arguments: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         status: Option<String>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,

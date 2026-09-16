@@ -3,11 +3,10 @@ use serde_json::Value;
 
 use crate::traits::merge::Merge;
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct MessagesUsage {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u32>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

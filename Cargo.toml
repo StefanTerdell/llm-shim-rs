@@ -16,6 +16,7 @@ reqwest = { version = "0.13.4", features = ["json", "stream"] }
 schemars = { version = "1.2.1", features = ["arrayvec07", "indexmap2", "preserve_order"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.150", features = ["preserve_order"] }
+serde_with = { version = "3", default-features = false, features = ["std", "macros"] }
 stefans-utils = { version = "0.12.0", features = ["secret-serialize-redacted"] }
 thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["full"] }

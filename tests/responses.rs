@@ -221,12 +221,15 @@ mod non_streaming {
                 .unwrap();
 
         assert_eq!(response.body.id.as_deref(), Some("resp_1"));
-        assert_eq!(response.body.status.as_deref(), Some("completed"));
+        assert_eq!(response.body.status.flatten().as_deref(), Some("completed"));
         let OutputItem::Message { content, .. } = &response.body.output[0] else {
             panic!("message")
         };
         assert_eq!(content[0], ContentPart::output_text("Hello"));
-        assert_eq!(response.body.usage.as_ref().unwrap().input_tokens, Some(25));
+        assert_eq!(
+            response.body.usage.clone().flatten().unwrap().input_tokens,
+            Some(25)
+        );
         assert!(response.stats.is_some());
         assert!(response.error.is_none());
         assert_eq!(server.single_request()["stream"], json!(true));
@@ -258,7 +261,7 @@ mod non_streaming {
             panic!("message")
         };
         assert_eq!(content[0], ContentPart::output_text("Hello"));
-        let usage = response.body.usage.unwrap();
+        let usage = response.body.usage.flatten().unwrap();
         assert!(usage.input_tokens.unwrap() > 0);
         assert!(usage.output_tokens.unwrap() > 0);
     }
@@ -384,7 +387,10 @@ mod reasoning_remapping {
         };
         assert_eq!(id.as_deref(), Some("msg_1"));
         assert_eq!(content[0], ContentPart::output_text("answer"));
-        assert_eq!(response.body.usage.as_ref().unwrap().output_tokens, Some(5));
+        assert_eq!(
+            response.body.usage.clone().flatten().unwrap().output_tokens,
+            Some(5)
+        );
     }
 }
 

@@ -10,9 +10,9 @@ use crate::{
     },
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct ChatCompletionResponseMessage {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(flatten)]
     pub common: CommonChatCompletionMessage,
@@ -43,10 +43,10 @@ impl Add for ChatCompletionResponseMessage {
     }
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonChatCompletionChoice {
     pub index: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<IndexMap<String, Vec<Value>>>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

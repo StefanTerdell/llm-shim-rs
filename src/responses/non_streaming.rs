@@ -43,7 +43,7 @@ pub async fn non_streaming_responses<'a>(
     let mut body = assembler.into_body();
 
     if let Some(stats) = &stats {
-        let usage = body.usage.get_or_insert_default();
+        let usage = body.usage.get_or_insert_default().get_or_insert_default();
         usage.input_tokens.get_or_insert(stats.input_tokens);
         usage.output_tokens.get_or_insert(stats.output_tokens);
         usage

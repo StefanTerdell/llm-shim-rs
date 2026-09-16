@@ -4,16 +4,14 @@ use indexmap::IndexMap;
 use serde_json::Value;
 use std::ops::Add;
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonChatCompletionMessage {
+    #[serialize_always]
     pub role: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ChatCompletionRequestMessageToolCall>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

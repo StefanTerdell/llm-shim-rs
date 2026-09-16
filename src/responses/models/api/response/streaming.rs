@@ -6,13 +6,14 @@ use crate::responses::models::api::{
     response::non_streaming::ResponseBody,
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 #[serde(tag = "type")]
 pub enum ResponsesStreamEvent {
     #[serde(rename = "response.created")]
     Created {
         response: ResponseBody,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -20,7 +21,7 @@ pub enum ResponsesStreamEvent {
     #[serde(rename = "response.in_progress")]
     InProgress {
         response: ResponseBody,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -28,7 +29,7 @@ pub enum ResponsesStreamEvent {
     #[serde(rename = "response.completed")]
     Completed {
         response: ResponseBody,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -36,7 +37,7 @@ pub enum ResponsesStreamEvent {
     #[serde(rename = "response.incomplete")]
     Incomplete {
         response: ResponseBody,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -44,7 +45,7 @@ pub enum ResponsesStreamEvent {
     #[serde(rename = "response.failed")]
     Failed {
         response: ResponseBody,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -53,7 +54,7 @@ pub enum ResponsesStreamEvent {
     OutputItemAdded {
         output_index: u32,
         item: OutputItem,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -62,189 +63,189 @@ pub enum ResponsesStreamEvent {
     OutputItemDone {
         output_index: u32,
         item: OutputItem,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.content_part.added")]
     ContentPartAdded {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         part: ContentPart,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.content_part.done")]
     ContentPartDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         part: ContentPart,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.output_text.delta")]
     OutputTextDelta {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         delta: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         logprobs: Option<Vec<Value>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.output_text.done")]
     OutputTextDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         logprobs: Option<Vec<Value>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.refusal.delta")]
     RefusalDelta {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         delta: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.refusal.done")]
     RefusalDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         refusal: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.reasoning_summary_part.added")]
     ReasoningSummaryPartAdded {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         summary_index: u32,
         part: ReasoningPart,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.reasoning_summary_part.done")]
     ReasoningSummaryPartDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         summary_index: u32,
         part: ReasoningPart,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.reasoning_summary_text.delta")]
     ReasoningSummaryTextDelta {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         summary_index: u32,
         delta: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.reasoning_summary_text.done")]
     ReasoningSummaryTextDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         summary_index: u32,
         text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.reasoning_text.delta")]
     ReasoningTextDelta {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         delta: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.reasoning_text.done")]
     ReasoningTextDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         #[serde(default)]
         content_index: u32,
         text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.function_call_arguments.delta")]
     FunctionCallArgumentsDelta {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         delta: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
     },
     #[serde(rename = "response.function_call_arguments.done")]
     FunctionCallArgumentsDone {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         item_id: Option<String>,
         output_index: u32,
         arguments: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -252,12 +253,15 @@ pub enum ResponsesStreamEvent {
     #[serde(rename = "error")]
     Error {
         #[serde(default)]
+        #[serialize_always]
         code: Option<Value>,
         #[serde(default)]
+        #[serialize_always]
         message: Option<String>,
         #[serde(default)]
+        #[serialize_always]
         param: Option<Value>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         sequence_number: Option<u64>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -526,7 +530,10 @@ mod tests {
         let ResponsesStreamEvent::Completed { response, .. } = &e else {
             panic!()
         };
-        assert_eq!(response.usage.as_ref().unwrap().output_tokens, Some(5));
+        assert_eq!(
+            response.usage.clone().flatten().unwrap().output_tokens,
+            Some(5)
+        );
         assert!(e.is_terminal());
 
         let e = parse(

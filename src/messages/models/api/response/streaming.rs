@@ -6,6 +6,7 @@ use crate::messages::models::api::{
     response::non_streaming::MessagesResponseBody,
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 #[serde(tag = "type")]
 pub enum MessagesStreamEvent {
@@ -38,7 +39,6 @@ pub enum MessagesStreamEvent {
     #[serde(rename = "message_delta")]
     MessageDelta {
         delta: MessageDelta,
-        #[serde(skip_serializing_if = "Option::is_none")]
         usage: Option<MessagesUsage>,
         #[serde(flatten)]
         additional_properties: IndexMap<String, Value>,
@@ -106,11 +106,14 @@ impl MessagesStreamEvent {
     }
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct MessageDelta {
     #[serde(default)]
+    #[serialize_always]
     pub stop_reason: Option<String>,
     #[serde(default)]
+    #[serialize_always]
     pub stop_sequence: Option<String>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,

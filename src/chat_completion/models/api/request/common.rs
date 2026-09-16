@@ -8,19 +8,20 @@ use crate::{
     chat_completion::models::api::common::CommonChatCompletionMessage, traits::or_add::OrAdd,
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct CommonChatCompletionRequestBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub messages: Vec<ChatCompletionRequestMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<bool>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct ChatCompletionRequestMessage {
+    #[serialize_always]
     pub content: Option<ChatCompletionRequestMessageContent>,
     #[serde(flatten)]
     pub common: CommonChatCompletionMessage,

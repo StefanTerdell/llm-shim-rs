@@ -12,19 +12,19 @@ pub struct NonStreamingMessagesResponse {
     pub error: Option<Value>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct MessagesResponseBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default)]
     pub content: Vec<ContentBlock>,
     #[serde(default)]
+    #[serialize_always]
     pub stop_reason: Option<String>,
     #[serde(default)]
+    #[serialize_always]
     pub stop_sequence: Option<String>,
     #[serde(default)]
     pub usage: MessagesUsage,

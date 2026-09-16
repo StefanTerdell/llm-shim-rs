@@ -22,10 +22,10 @@ pub struct NonStreamingChatCompletionResponse {
 
 literal_str!(ChatCompletionObjectLabel = "chat.completion");
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct NonStreamingChatCompletionResponseBody {
     pub object: ChatCompletionObjectLabel,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub choices: Vec<NonStreamingChatCompletionChoice>,
     pub usage: ChatCompletionUsage,

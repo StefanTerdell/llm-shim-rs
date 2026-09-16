@@ -7,10 +7,10 @@ use crate::chat_completion::models::api::request::{
     non_streaming::NonStreamingChatCompletionRequestBody,
 };
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct StreamingChatCompletionRequestBody {
     pub stream: True,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_options: Option<StreamingChatCompletionRequestBodyStreamOptions>,
     #[serde(flatten)]
     pub common: CommonChatCompletionRequestBody,
@@ -31,9 +31,9 @@ impl From<StreamingChatCompletionRequestBody> for ChatCompletionRequestBody {
     }
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel)]
 pub struct StreamingChatCompletionRequestBodyStreamOptions {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub include_usage: Option<bool>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
