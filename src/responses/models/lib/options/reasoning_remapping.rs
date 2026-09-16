@@ -10,7 +10,7 @@ use crate::responses::models::{
     lib::assembler::ResponseAssembler,
 };
 
-#[derive(..ApiModel, Copy, Hash)]
+#[derive(..ApiModel, Copy, Eq, Hash)]
 pub struct ReasoningRemappingConfig {
     pub from: ReasoningPosition,
     pub to: ReasoningPosition,
@@ -22,7 +22,7 @@ impl From<(ReasoningPosition, ReasoningPosition)> for ReasoningRemappingConfig {
     }
 }
 
-#[derive(..ApiModel, Copy, Hash)]
+#[derive(..ApiModel, Copy, Eq, Hash)]
 pub enum ReasoningPosition {
     Summary,
     Content,

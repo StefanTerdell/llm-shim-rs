@@ -68,6 +68,23 @@ impl Script {
         }
     }
 
+    /// A plain 200 JSON response.
+    pub fn json(body: Value) -> Self {
+        Self {
+            status: StatusCode::OK,
+            content_type: "application/json",
+            frames: vec![raw(body.to_string())],
+        }
+    }
+
+    /// Delay the whole response body by `delay`.
+    pub fn delayed(mut self, delay: Duration) -> Self {
+        if let Some(first) = self.frames.first_mut() {
+            first.delay = Some(delay);
+        }
+        self
+    }
+
     /// A non-streaming error response with a JSON body.
     pub fn error(status: StatusCode, body: Value) -> Self {
         Self {
@@ -88,6 +105,8 @@ pub struct MockSse {
     pub url: String,
     pub messages_url: String,
     pub responses_url: String,
+    pub embeddings_url: String,
+    pub rerank_url: String,
     requests: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
     _server: JoinHandle<()>,
 }
@@ -104,6 +123,8 @@ impl MockSse {
             .route("/v1/chat/completions", post(handler))
             .route("/v1/messages", post(handler))
             .route("/v1/responses", post(handler))
+            .route("/v1/embeddings", post(handler))
+            .route("/v1/rerank", post(handler))
             .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -116,6 +137,8 @@ impl MockSse {
             url: format!("http://{addr}/v1/chat/completions"),
             messages_url: format!("http://{addr}/v1/messages"),
             responses_url: format!("http://{addr}/v1/responses"),
+            embeddings_url: format!("http://{addr}/v1/embeddings"),
+            rerank_url: format!("http://{addr}/v1/rerank"),
             requests,
             _server: server,
         }

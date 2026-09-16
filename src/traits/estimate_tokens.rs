@@ -9,10 +9,12 @@ use crate::{
         },
         response::common::ChatCompletionResponseMessage,
     },
+    embeddings::models::api::request::{EmbeddingsInput, EmbeddingsRequestBody},
     messages::models::api::{
         common::{ContentBlock, ContentBlockDelta},
         request::common::{CommonMessagesRequestBody, MessageContent, MessageParam},
     },
+    rerank::models::api::request::RerankRequestBody,
     responses::models::api::{
         common::{ContentPart, OutputItem, ReasoningPart},
         request::common::{CommonResponsesRequestBody, ResponsesInput},
@@ -240,5 +242,40 @@ impl EstimateTokens for ReasoningPart {
         self.text()
             .map(EstimateTokens::estimate_tokens)
             .unwrap_or(0)
+    }
+}
+
+impl EstimateTokens for EmbeddingsRequestBody {
+    fn estimate_tokens(&self) -> u32 {
+        match &self.input {
+            EmbeddingsInput::Text(text) => text.estimate_tokens(),
+            EmbeddingsInput::Texts(texts) => texts.iter().map(|t| t.estimate_tokens()).sum(),
+            EmbeddingsInput::Tokens(tokens) => tokens.len() as u32,
+            EmbeddingsInput::TokenBatches(batches) => batches.iter().map(|b| b.len() as u32).sum(),
+        }
+    }
+}
+
+impl EstimateTokens for RerankRequestBody {
+    fn estimate_tokens(&self) -> u32 {
+        self.query.estimate_tokens()
+            + self
+                .documents
+                .iter()
+                .map(EstimateTokens::estimate_tokens)
+                .sum::<u32>()
+    }
+}
+
+impl EstimateTokens for Value {
+    fn estimate_tokens(&self) -> u32 {
+        match self {
+            Value::String(text) => text.estimate_tokens(),
+            Value::Object(object) => match object.get("text").and_then(Value::as_str) {
+                Some(text) => text.estimate_tokens(),
+                None => self.to_string().estimate_tokens(),
+            },
+            other => other.to_string().estimate_tokens(),
+        }
     }
 }

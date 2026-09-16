@@ -6,7 +6,7 @@ use crate::messages::models::api::{
     response::streaming::MessagesStreamEvent,
 };
 
-#[derive(..ApiModel, Copy, Hash)]
+#[derive(..ApiModel, Copy, Eq, Hash)]
 pub struct ThinkingRemappingConfig {
     pub from: ThinkingPosition,
     pub to: ThinkingPosition,
@@ -18,7 +18,7 @@ impl From<(ThinkingPosition, ThinkingPosition)> for ThinkingRemappingConfig {
     }
 }
 
-#[derive(..ApiModel, Copy, Hash)]
+#[derive(..ApiModel, Copy, Eq, Hash)]
 pub enum ThinkingPosition {
     ThinkingBlock,
     Text {

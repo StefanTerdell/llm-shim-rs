@@ -5,7 +5,7 @@ use crate::traits::reasoning_content_remapping::{
     ReasoningContentRemappingInnerTarget, ReasoningContentRemappingTarget,
 };
 
-#[derive(..ApiModel, Copy, Hash)]
+#[derive(..ApiModel, Copy, Eq, Hash)]
 pub struct ReasoningContentRemappingConfig {
     pub from: ReasoningContentPosition,
     pub to: ReasoningContentPosition,
@@ -25,7 +25,7 @@ impl From<(ReasoningContentPosition, ReasoningContentPosition)>
     }
 }
 
-#[derive(..ApiModel, Copy, Hash)]
+#[derive(..ApiModel, Copy, Eq, Hash)]
 pub enum ReasoningContentPosition {
     Content {
         start_tag: ArrayString<32>,

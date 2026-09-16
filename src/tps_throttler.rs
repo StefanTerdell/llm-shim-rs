@@ -50,3 +50,45 @@ impl<'a> TpsThrottler<'a> {
         }
     }
 }
+
+pub async fn pace_once<T, E, F>(
+    max_tps: Option<&dyn MaxTps>,
+    request: F,
+    tokens: impl FnOnce(&T) -> u32,
+) -> Result<(T, ChunkStats), E>
+where
+    F: Future<Output = Result<T, E>>,
+{
+    let before = MaxTps::get(&max_tps).await;
+    let started = Instant::now();
+    let value = request.await?;
+    let after = MaxTps::get(&max_tps).await;
+    let mut duration = started.elapsed();
+    let tokens = tokens(&value);
+
+    let max_tps = match (before, after) {
+        (Some(a), Some(b)) => Some((a + b) / 2.0),
+        (a, b) => a.or(b),
+    };
+
+    let tps_correction_duration = max_tps.and_then(|max_tps| {
+        let needed = tokens as f32 / max_tps;
+        let secs = duration.as_secs_f32();
+
+        (needed > secs).then(|| Duration::from_secs_f32(needed - secs))
+    });
+
+    if let Some(correction) = tps_correction_duration {
+        sleep(correction).await;
+        duration += correction;
+    }
+
+    Ok((
+        value,
+        ChunkStats {
+            duration,
+            tokens,
+            tps_correction_duration,
+        },
+    ))
+}
