@@ -12,3 +12,4 @@ pub mod sse;
 pub mod stats;
 pub mod tps_throttler;
 pub mod traits;
+pub mod transcriptions;

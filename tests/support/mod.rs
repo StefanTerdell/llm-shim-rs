@@ -9,7 +9,7 @@
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::State,
+    extract::{FromRequest, Multipart, Request, State},
     http::{HeaderMap, HeaderValue, StatusCode, header::CONTENT_TYPE},
     response::Response,
     routing::post,
@@ -68,6 +68,15 @@ impl Script {
         }
     }
 
+    /// A plain 200 text/plain response.
+    pub fn text(body: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::OK,
+            content_type: "text/plain; charset=utf-8",
+            frames: vec![raw(body.into())],
+        }
+    }
+
     /// A plain 200 JSON response.
     pub fn json(body: Value) -> Self {
         Self {
@@ -107,6 +116,7 @@ pub struct MockSse {
     pub responses_url: String,
     pub embeddings_url: String,
     pub rerank_url: String,
+    pub transcriptions_url: String,
     requests: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
     _server: JoinHandle<()>,
 }
@@ -125,6 +135,7 @@ impl MockSse {
             .route("/v1/responses", post(handler))
             .route("/v1/embeddings", post(handler))
             .route("/v1/rerank", post(handler))
+            .route("/v1/audio/transcriptions", post(handler))
             .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -139,6 +150,7 @@ impl MockSse {
             responses_url: format!("http://{addr}/v1/responses"),
             embeddings_url: format!("http://{addr}/v1/embeddings"),
             rerank_url: format!("http://{addr}/v1/rerank"),
+            transcriptions_url: format!("http://{addr}/v1/audio/transcriptions"),
             requests,
             _server: server,
         }
@@ -173,8 +185,55 @@ impl Drop for MockSse {
     }
 }
 
-async fn handler(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
-    let json = serde_json::from_slice::<Value>(&body).expect("request body must be JSON");
+async fn handler(State(state): State<AppState>, request: Request) -> Response {
+    let headers = request.headers().clone();
+    let is_multipart = headers
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ct| ct.starts_with("multipart/form-data"));
+
+    let json = if is_multipart {
+        let mut multipart = Multipart::from_request(request, &()).await.unwrap();
+        let mut object = serde_json::Map::new();
+        while let Some(field) = multipart.next_field().await.unwrap() {
+            let name = field.name().unwrap().to_owned();
+            if let Some(filename) = field.file_name().map(str::to_owned) {
+                let content_type = field.content_type().map(str::to_owned);
+                let bytes = field.bytes().await.unwrap();
+                object.insert(
+                    name,
+                    serde_json::json!({
+                        "filename": filename,
+                        "content_type": content_type,
+                        "size": bytes.len(),
+                        "content": String::from_utf8_lossy(&bytes),
+                    }),
+                );
+            } else {
+                let text = field.text().await.unwrap();
+                match name.strip_suffix("[]") {
+                    Some(array_name) => {
+                        object
+                            .entry(array_name.to_owned())
+                            .or_insert_with(|| Value::Array(vec![]))
+                            .as_array_mut()
+                            .unwrap()
+                            .push(Value::String(text));
+                    }
+                    None => {
+                        object.insert(name, Value::String(text));
+                    }
+                }
+            }
+        }
+        Value::Object(object)
+    } else {
+        let body = axum::body::to_bytes(request.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice::<Value>(&body).expect("request body must be JSON")
+    };
+
     state.requests.lock().unwrap().push((headers, json));
 
     let frames = state.script.frames.clone();

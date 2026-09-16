@@ -8,6 +8,7 @@ pub trait IntoUrlExt {
     fn with_default_responses_path(self) -> Result<impl IntoUrl, Error>;
     fn with_default_embeddings_path(self) -> Result<impl IntoUrl, Error>;
     fn with_default_rerank_path(self) -> Result<impl IntoUrl, Error>;
+    fn with_default_transcriptions_path(self) -> Result<impl IntoUrl, Error>;
 }
 
 impl<T: IntoUrl> IntoUrlExt for T {
@@ -29,5 +30,9 @@ impl<T: IntoUrl> IntoUrlExt for T {
 
     fn with_default_rerank_path(self) -> Result<impl IntoUrl, Error> {
         Ok(self.into_url()?.join("/v1/rerank")?)
+    }
+
+    fn with_default_transcriptions_path(self) -> Result<impl IntoUrl, Error> {
+        Ok(self.into_url()?.join("/v1/audio/transcriptions")?)
     }
 }

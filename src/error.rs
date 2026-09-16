@@ -14,4 +14,6 @@ pub enum Error {
     EventStream(#[from] EventStreamError<ReqwestError>),
     #[error(transparent)]
     UrlParse(#[from] UrlParseError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
