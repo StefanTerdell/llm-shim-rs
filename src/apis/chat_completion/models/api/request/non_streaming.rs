@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use stefans_utils::literals::{False, True};
 
 use crate::apis::chat_completion::models::api::request::{
@@ -11,6 +13,13 @@ pub struct NonStreamingChatCompletionRequestBody {
     pub stream: Option<False>,
     #[serde(flatten)]
     pub common: CommonChatCompletionRequestBody,
+}
+
+impl NonStreamingChatCompletionRequestBody {
+    pub fn with_model(mut self, model: Option<impl Display>) -> Self {
+        self.common = self.common.with_model(model);
+        self
+    }
 }
 
 impl From<NonStreamingChatCompletionRequestBody> for StreamingChatCompletionRequestBody {

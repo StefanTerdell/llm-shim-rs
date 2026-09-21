@@ -2,6 +2,8 @@ pub mod common;
 pub mod non_streaming;
 pub mod streaming;
 
+use std::fmt::Display;
+
 use crate::apis::responses::models::api::request::{
     non_streaming::NonStreamingResponsesRequestBody, streaming::StreamingResponsesRequestBody,
 };
@@ -11,6 +13,15 @@ use crate::apis::responses::models::api::request::{
 pub enum ResponsesRequestBody {
     NonStreaming(NonStreamingResponsesRequestBody),
     Streaming(StreamingResponsesRequestBody),
+}
+
+impl ResponsesRequestBody {
+    pub fn with_model(self, model: Option<impl Display>) -> Self {
+        match self {
+            Self::NonStreaming(body) => Self::NonStreaming(body.with_model(model)),
+            Self::Streaming(body) => Self::Streaming(body.with_model(model)),
+        }
+    }
 }
 
 impl From<ResponsesRequestBody> for NonStreamingResponsesRequestBody {

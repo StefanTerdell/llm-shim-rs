@@ -5,6 +5,7 @@ use reqwest::{
     multipart::{Form, Part},
 };
 use serde_json::Value;
+use std::fmt::Display;
 use std::path::Path;
 use tokio::fs::File;
 
@@ -24,8 +25,17 @@ impl TranscriptionsRequest {
         }
     }
 
+    pub fn with_model(mut self, model: Option<impl Display>) -> Self {
+        self.fields = self.fields.with_model(model);
+        self
+    }
+
     pub fn into_form(self, stream: Option<bool>) -> Result<Form, Error> {
         let mut form = Form::new().part("file", self.file.into_part()?);
+
+        if let Some(model) = self.fields.model {
+            form = form.text("model", model);
+        }
 
         if let Some(stream) = stream.or(self.fields.stream) {
             form = form.text("stream", stream.to_string());
@@ -59,9 +69,17 @@ fn scalar(value: Value) -> String {
 #[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct TranscriptionsFields {
+    pub model: Option<String>,
     pub stream: Option<bool>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
+}
+
+impl TranscriptionsFields {
+    pub fn with_model(mut self, model: Option<impl Display>) -> Self {
+        self.model = model.map(|t| t.to_string());
+        self
+    }
 }
 
 #[derive(Debug)]

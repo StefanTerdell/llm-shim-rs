@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use stefans_utils::literals::True;
 
 use crate::apis::messages::models::api::request::{
@@ -10,6 +12,13 @@ pub struct StreamingMessagesRequestBody {
     pub stream: True,
     #[serde(flatten)]
     pub common: CommonMessagesRequestBody,
+}
+
+impl StreamingMessagesRequestBody {
+    pub fn with_model(mut self, model: Option<impl Display>) -> Self {
+        self.common = self.common.with_model(model);
+        self
+    }
 }
 
 impl From<StreamingMessagesRequestBody> for NonStreamingMessagesRequestBody {

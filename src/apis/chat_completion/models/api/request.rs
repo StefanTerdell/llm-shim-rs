@@ -2,6 +2,8 @@ pub mod common;
 pub mod non_streaming;
 pub mod streaming;
 
+use std::fmt::Display;
+
 use crate::apis::chat_completion::models::api::request::{
     non_streaming::NonStreamingChatCompletionRequestBody,
     streaming::StreamingChatCompletionRequestBody,
@@ -12,6 +14,15 @@ use crate::apis::chat_completion::models::api::request::{
 pub enum ChatCompletionRequestBody {
     NonStreaming(NonStreamingChatCompletionRequestBody),
     Streaming(StreamingChatCompletionRequestBody),
+}
+
+impl ChatCompletionRequestBody {
+    pub fn with_model(self, model: Option<impl Display>) -> Self {
+        match self {
+            Self::NonStreaming(body) => Self::NonStreaming(body.with_model(model)),
+            Self::Streaming(body) => Self::Streaming(body.with_model(model)),
+        }
+    }
 }
 
 impl From<ChatCompletionRequestBody> for NonStreamingChatCompletionRequestBody {

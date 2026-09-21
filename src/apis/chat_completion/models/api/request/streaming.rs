@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use indexmap::IndexMap;
 use serde_json::Value;
 use stefans_utils::literals::True;
@@ -14,6 +16,13 @@ pub struct StreamingChatCompletionRequestBody {
     pub stream_options: Option<StreamingChatCompletionRequestBodyStreamOptions>,
     #[serde(flatten)]
     pub common: CommonChatCompletionRequestBody,
+}
+
+impl StreamingChatCompletionRequestBody {
+    pub fn with_model(mut self, model: Option<impl Display>) -> Self {
+        self.common = self.common.with_model(model);
+        self
+    }
 }
 
 impl From<StreamingChatCompletionRequestBody> for NonStreamingChatCompletionRequestBody {

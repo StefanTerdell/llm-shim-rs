@@ -1,4 +1,4 @@
-use std::{convert::Infallible, ops::Add, str::FromStr};
+use std::{convert::Infallible, fmt::Display, ops::Add, str::FromStr};
 
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -16,6 +16,13 @@ pub struct CommonChatCompletionRequestBody {
     pub logprobs: Option<bool>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
+}
+
+impl CommonChatCompletionRequestBody {
+    pub fn with_model(mut self, model: Option<impl Display>) -> Self {
+        self.model = model.map(|t| t.to_string());
+        self
+    }
 }
 
 #[serde_with::skip_serializing_none]
