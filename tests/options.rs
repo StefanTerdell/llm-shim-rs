@@ -107,3 +107,73 @@ async fn estimate_counting_still_forwards_logprobs_the_caller_asked_for() {
 
     assert_eq!(server.single_request()["logprobs"], json!(true));
 }
+
+mod non_streaming_mode {
+    use super::*;
+    use llm_shim::{
+        apis::chat_completion::models::api::request::non_streaming::NonStreamingChatCompletionRequestBody,
+        non_streaming_mode::NonStreamingMode,
+    };
+
+    fn request() -> NonStreamingChatCompletionRequestBody {
+        serde_json::from_value(json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn defaults_to_real() {
+        assert_eq!(
+            ChatCompletionOptions::default().non_streaming_mode,
+            NonStreamingMode::Real
+        );
+    }
+
+    #[tokio::test]
+    async fn real_mode_sends_a_plain_request_and_parses_a_json_body() {
+        let server = MockSse::start(Script::json(json!({
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "hi"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .await;
+
+        let response = chat_completion(&server.url, request(), None).await.unwrap();
+
+        let ChatCompletionResponse::NonStreaming(response) = response else {
+            panic!("expected non-streaming");
+        };
+        assert_eq!(
+            response.body.choices[0].message.content.as_deref(),
+            Some("hi")
+        );
+        assert!(
+            server
+                .single_request()
+                .get("stream")
+                .is_none_or(|s| s == &json!(false))
+        );
+    }
+
+    #[tokio::test]
+    async fn virtual_mode_streams_and_folds() {
+        let server = MockSse::start(Script::sse([data(delta(0, "hi")), done()])).await;
+
+        let options =
+            ChatCompletionOptions::default().with_non_streaming_mode(NonStreamingMode::Virtual);
+        let response = chat_completion(&server.url, request(), options)
+            .await
+            .unwrap();
+
+        let ChatCompletionResponse::NonStreaming(response) = response else {
+            panic!("expected non-streaming");
+        };
+        assert_eq!(
+            response.body.choices[0].message.content.as_deref(),
+            Some("hi")
+        );
+        assert_eq!(server.single_request()["stream"], json!(true));
+    }
+}

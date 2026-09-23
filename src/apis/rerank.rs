@@ -37,7 +37,8 @@ pub async fn rerank<'a>(
     stats.output_tokens_is_estimate = false;
 
     let (body, chunk) = pace_once(
-        options.tps_throttler,
+        options.max_tps,
+        options.max_tps_sample_interval,
         async {
             Ok::<_, Error>(
                 request

@@ -35,7 +35,8 @@ pub async fn non_streaming_transcriptions<'a>(
     let mut stats = StreamStats::new(Instant::now(), 0);
 
     let (body, chunk) = pace_once(
-        options.tps_throttler,
+        options.max_tps,
+        options.max_tps_sample_interval,
         async {
             let response = builder.send().await?.error_for_status()?;
             let is_json = response

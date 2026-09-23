@@ -52,6 +52,27 @@ impl MaxTps for SteppedTps {
     }
 }
 
+struct CountingTps<'a>(&'a dyn MaxTps, AtomicUsize);
+
+#[async_trait]
+impl MaxTps for CountingTps<'_> {
+    async fn get(&self) -> Option<f32> {
+        self.1.fetch_add(1, Ordering::SeqCst);
+        self.0.get().await
+    }
+}
+
+struct SlowTps(Duration, AtomicUsize);
+
+#[async_trait]
+impl MaxTps for SlowTps {
+    async fn get(&self) -> Option<f32> {
+        self.1.fetch_add(1, Ordering::SeqCst);
+        tokio::time::sleep(self.0).await;
+        Some(1000.0)
+    }
+}
+
 #[tokio::test]
 async fn parses_vectors_and_reports_exact_input_tokens() {
     let server = MockSse::start(Script::json(response(&[vec![0.1, 0.2], vec![0.3, 0.4]], 7))).await;
@@ -197,7 +218,7 @@ async fn sleeps_before_returning_when_the_request_exceeded_max_tps() {
     let result = embeddings(
         &server.embeddings_url,
         request(json!("x")),
-        EmbeddingsOptions::default().with_tps_throttler(&throttler),
+        EmbeddingsOptions::default().with_max_tps(&throttler),
     )
     .await
     .unwrap();
@@ -219,7 +240,7 @@ async fn does_not_sleep_when_the_request_was_already_slow_enough() {
     let result = embeddings(
         &server.embeddings_url,
         request(json!("x")),
-        EmbeddingsOptions::default().with_tps_throttler(&throttler),
+        EmbeddingsOptions::default().with_max_tps(&throttler),
     )
     .await
     .unwrap();
@@ -229,38 +250,162 @@ async fn does_not_sleep_when_the_request_was_already_slow_enough() {
 }
 
 #[tokio::test]
-async fn averages_the_max_tps_read_before_and_after_the_request() {
+async fn reads_max_tps_once_when_the_request_finishes_before_the_first_tick() {
     let server = MockSse::start(Script::json(response(&[vec![0.0]], 50))).await;
-    let throttler = SteppedTps(vec![Some(50.0), Some(150.0)], AtomicUsize::new(0));
+    let throttler = SteppedTps(vec![Some(100.0), Some(1000.0)], AtomicUsize::new(0));
 
     let started = Instant::now();
     embeddings(
         &server.embeddings_url,
         request(json!("x")),
-        EmbeddingsOptions::default().with_tps_throttler(&throttler),
+        EmbeddingsOptions::default().with_max_tps(&throttler),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        started.elapsed() >= Duration::from_millis(450),
+        "elapsed {:?}",
+        started.elapsed()
+    );
+    assert_eq!(throttler.1.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn samples_max_tps_on_the_interval_while_the_request_is_in_flight() {
+    let server = MockSse::start(
+        Script::json(response(&[vec![0.0]], 50)).delayed(Duration::from_millis(600)),
+    )
+    .await;
+    let throttler = SteppedTps(
+        vec![
+            Some(50.0),
+            Some(150.0),
+            Some(150.0),
+            Some(150.0),
+            Some(150.0),
+        ],
+        AtomicUsize::new(0),
+    );
+
+    let started = Instant::now();
+    embeddings(
+        &server.embeddings_url,
+        request(json!("x")),
+        EmbeddingsOptions::default().with_max_tps(&throttler),
     )
     .await
     .unwrap();
     let elapsed = started.elapsed();
 
-    assert!(elapsed >= Duration::from_millis(450), "elapsed {elapsed:?}");
-    assert!(elapsed < Duration::from_millis(900), "elapsed {elapsed:?}");
-    assert_eq!(throttler.1.load(Ordering::SeqCst), 2);
+    let reads = throttler.1.load(Ordering::SeqCst);
+    assert!((3..=8).contains(&reads), "reads {reads}");
+    assert!(elapsed < Duration::from_millis(950), "elapsed {elapsed:?}");
 }
 
 #[tokio::test]
-async fn uses_whichever_max_tps_read_is_available() {
-    let server = MockSse::start(Script::json(response(&[vec![0.0]], 50))).await;
-    let throttler = SteppedTps(vec![None, Some(100.0)], AtomicUsize::new(0));
+async fn default_sample_interval_is_250_ms() {
+    assert_eq!(
+        EmbeddingsOptions::default().max_tps_sample_interval,
+        Some(llm_shim::tps_throttler::DEFAULT_MAX_TPS_SAMPLE_INTERVAL)
+    );
+    assert_eq!(
+        EmbeddingsOptions::default().max_tps_sample_interval,
+        Some(Duration::from_millis(250))
+    );
+}
 
-    let started = Instant::now();
+#[tokio::test]
+async fn no_sample_interval_reads_max_tps_exactly_once() {
+    let server =
+        MockSse::start(Script::json(response(&[vec![0.0]], 5)).delayed(Duration::from_millis(300)))
+            .await;
+    let throttler = SteppedTps(
+        vec![Some(1000.0), Some(1000.0), Some(1000.0)],
+        AtomicUsize::new(0),
+    );
+
     embeddings(
         &server.embeddings_url,
         request(json!("x")),
-        EmbeddingsOptions::default().with_tps_throttler(&throttler),
+        EmbeddingsOptions::default()
+            .with_max_tps(&throttler)
+            .without_max_tps_sample_interval(),
     )
     .await
     .unwrap();
 
-    assert!(started.elapsed() >= Duration::from_millis(450));
+    assert_eq!(throttler.1.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn zero_sample_interval_reads_max_tps_back_to_back() {
+    let server =
+        MockSse::start(Script::json(response(&[vec![0.0]], 5)).delayed(Duration::from_millis(100)))
+            .await;
+    let throttler = FixedTps(1000.0);
+    let counter = CountingTps(&throttler, AtomicUsize::new(0));
+
+    let result = embeddings(
+        &server.embeddings_url,
+        request(json!("x")),
+        EmbeddingsOptions::default()
+            .with_max_tps(&counter)
+            .with_max_tps_sample_interval(Duration::ZERO),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.body.additional_properties["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let reads = counter.1.load(Ordering::SeqCst);
+    assert!(reads > 100, "reads {reads}");
+}
+
+#[tokio::test]
+async fn short_sample_interval_reads_max_tps_on_every_tick() {
+    let server =
+        MockSse::start(Script::json(response(&[vec![0.0]], 5)).delayed(Duration::from_millis(300)))
+            .await;
+    let throttler = FixedTps(1000.0);
+    let counter = CountingTps(&throttler, AtomicUsize::new(0));
+
+    embeddings(
+        &server.embeddings_url,
+        request(json!("x")),
+        EmbeddingsOptions::default()
+            .with_max_tps(&counter)
+            .with_max_tps_sample_interval(Duration::from_millis(50)),
+    )
+    .await
+    .unwrap();
+
+    let reads = counter.1.load(Ordering::SeqCst);
+    assert!((5..=12).contains(&reads), "reads {reads}");
+}
+
+#[tokio::test]
+async fn a_slow_max_tps_source_is_not_polled_in_a_burst() {
+    let server =
+        MockSse::start(Script::json(response(&[vec![0.0]], 5)).delayed(Duration::from_millis(400)))
+            .await;
+    let throttler = SlowTps(Duration::from_millis(100), AtomicUsize::new(0));
+
+    embeddings(
+        &server.embeddings_url,
+        request(json!("x")),
+        EmbeddingsOptions::default()
+            .with_max_tps(&throttler)
+            .with_max_tps_sample_interval(Duration::from_millis(20)),
+    )
+    .await
+    .unwrap();
+
+    let reads = throttler.1.load(Ordering::SeqCst);
+    assert!((2..=6).contains(&reads), "reads {reads}");
 }

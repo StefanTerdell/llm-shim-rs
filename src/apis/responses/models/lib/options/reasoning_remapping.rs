@@ -1,3 +1,5 @@
+pub mod body;
+
 use arrayvec::ArrayString;
 use indexmap::IndexMap;
 use std::collections::HashSet;

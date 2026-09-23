@@ -220,7 +220,7 @@ mod non_streaming {
                 ChatCompletionOptions, reasoning_remapping::ChatCompletionReasoningPosition,
             },
         },
-        non_streaming::non_streaming_chat_completion,
+        virtual_non_streaming::virtual_non_streaming_chat_completion,
     };
 
     fn request() -> NonStreamingChatCompletionRequestBody {
@@ -243,7 +243,7 @@ mod non_streaming {
         ]))
         .await;
 
-        let response = non_streaming_chat_completion(&server.url, request(), None)
+        let response = virtual_non_streaming_chat_completion(&server.url, request(), None)
             .await
             .unwrap();
 
@@ -258,9 +258,9 @@ mod non_streaming {
             choices[0].message.common.additional_properties["role"],
             json!("assistant")
         );
-        assert_eq!(response.body.usage.prompt_tokens(), 7);
-        assert_eq!(response.body.usage.completion_tokens(), 4);
-        assert_eq!(response.body.usage.total_tokens(), 11);
+        assert_eq!(response.body.usage.as_ref().unwrap().prompt_tokens(), 7);
+        assert_eq!(response.body.usage.as_ref().unwrap().completion_tokens(), 4);
+        assert_eq!(response.body.usage.as_ref().unwrap().total_tokens(), 11);
         assert!(response.stats.is_some());
         assert!(response.error.is_none());
         assert_eq!(response.body.model.as_deref(), Some("test-model"));
@@ -285,7 +285,7 @@ mod non_streaming {
         ]))
         .await;
 
-        let response = non_streaming_chat_completion(&server.url, request(), None)
+        let response = virtual_non_streaming_chat_completion(&server.url, request(), None)
             .await
             .unwrap();
 
@@ -322,7 +322,7 @@ mod non_streaming {
         ]))
         .await;
 
-        let response = non_streaming_chat_completion(&server.url, request(), None)
+        let response = virtual_non_streaming_chat_completion(&server.url, request(), None)
             .await
             .unwrap();
 
@@ -353,12 +353,12 @@ mod non_streaming {
         ]))
         .await;
 
-        let response = non_streaming_chat_completion(&server.url, request(), None)
+        let response = virtual_non_streaming_chat_completion(&server.url, request(), None)
             .await
             .unwrap();
 
-        assert_eq!(response.body.usage.completion_tokens(), 5);
-        assert!(response.body.usage.prompt_tokens() > 0);
+        assert_eq!(response.body.usage.as_ref().unwrap().completion_tokens(), 5);
+        assert!(response.body.usage.as_ref().unwrap().prompt_tokens() > 0);
     }
 
     #[tokio::test]
@@ -369,7 +369,7 @@ mod non_streaming {
         ]))
         .await;
 
-        let response = non_streaming_chat_completion(&server.url, request(), None)
+        let response = virtual_non_streaming_chat_completion(&server.url, request(), None)
             .await
             .unwrap();
 
@@ -400,7 +400,7 @@ mod non_streaming {
             ChatCompletionReasoningPosition::ReasoningContent,
         ));
 
-        let response = non_streaming_chat_completion(&server.url, request(), options)
+        let response = virtual_non_streaming_chat_completion(&server.url, request(), options)
             .await
             .unwrap();
 
@@ -503,6 +503,222 @@ mod throttling {
                 .chunks
                 .iter()
                 .all(|c| c.tps_correction_duration.is_none())
+        );
+    }
+}
+
+mod real_non_streaming {
+    use super::*;
+    use async_trait::async_trait;
+    use llm_shim::{
+        apis::chat_completion::{
+            models::{
+                api::request::non_streaming::NonStreamingChatCompletionRequestBody,
+                lib::options::{
+                    ChatCompletionOptions, reasoning_remapping::ChatCompletionReasoningPosition,
+                },
+            },
+            non_streaming::non_streaming_chat_completion,
+        },
+        traits::max_tps::MaxTps,
+    };
+    use std::time::{Duration, Instant};
+
+    struct FixedTps(f32);
+
+    #[async_trait]
+    impl MaxTps for FixedTps {
+        async fn get(&self) -> Option<f32> {
+            Some(self.0)
+        }
+    }
+
+    fn request() -> NonStreamingChatCompletionRequestBody {
+        serde_json::from_value(json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap()
+    }
+
+    fn completion(content: &str, usage: Option<(u32, u32)>) -> serde_json::Value {
+        let mut body = json!({
+            "id": "chatcmpl-1",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "test-model",
+            "system_fingerprint": "fp",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}]
+        });
+        if let Some((prompt, completion)) = usage {
+            body["usage"] = json!({"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": prompt + completion});
+        }
+        body
+    }
+
+    #[tokio::test]
+    async fn sends_a_single_non_streaming_request_and_passes_the_body_through() {
+        let server = MockSse::start(Script::json(completion("hi", Some((7, 4))))).await;
+
+        let response = non_streaming_chat_completion(&server.url, request(), None)
+            .await
+            .unwrap();
+
+        let sent = server.single_request();
+        assert!(
+            sent.get("stream").is_none_or(|s| s == &json!(false)),
+            "sent: {sent}"
+        );
+        assert!(sent.get("stream_options").is_none());
+        assert!(sent.get("logprobs").is_none());
+
+        assert_eq!(
+            response.body.additional_properties["id"],
+            json!("chatcmpl-1")
+        );
+        assert_eq!(
+            response.body.additional_properties["system_fingerprint"],
+            json!("fp")
+        );
+        assert_eq!(
+            response.body.choices[0].message.content.as_deref(),
+            Some("hi")
+        );
+        assert_eq!(
+            response.body.choices[0].common.additional_properties["finish_reason"],
+            json!("stop")
+        );
+        assert_eq!(response.body.usage.as_ref().unwrap().prompt_tokens(), 7);
+        assert!(response.error.is_none());
+
+        let stats = response.stats.unwrap();
+        assert!(!stats.input_tokens_is_estimate);
+        assert_eq!(stats.input_tokens, 7);
+        assert!(!stats.output_tokens_is_estimate);
+        assert_eq!(stats.output_tokens, 4);
+        assert_eq!(stats.chunks.len(), 1);
+        assert_eq!(stats.chunks[0].tokens, 4);
+    }
+
+    #[tokio::test]
+    async fn estimates_tokens_and_fills_usage_when_the_server_sends_none() {
+        let server = MockSse::start(Script::json(completion("hello there world", None))).await;
+
+        let response = non_streaming_chat_completion(&server.url, request(), None)
+            .await
+            .unwrap();
+
+        let stats = response.stats.unwrap();
+        assert!(stats.input_tokens_is_estimate);
+        assert!(stats.output_tokens_is_estimate);
+        assert!(stats.output_tokens > 0);
+        let usage = response.body.usage.unwrap();
+        assert_eq!(usage.completion_tokens(), stats.output_tokens);
+        assert_eq!(usage.prompt_tokens(), stats.input_tokens);
+    }
+
+    #[tokio::test]
+    async fn sleeps_when_the_request_exceeded_max_tps() {
+        let server = MockSse::start(Script::json(completion("x", Some((1, 50))))).await;
+        let throttler = FixedTps(100.0);
+
+        let started = Instant::now();
+        let response = non_streaming_chat_completion(
+            &server.url,
+            request(),
+            ChatCompletionOptions::default().with_max_tps(&throttler),
+        )
+        .await
+        .unwrap();
+
+        assert!(started.elapsed() >= Duration::from_millis(450));
+        assert!(
+            response.stats.unwrap().chunks[0]
+                .tps_correction_duration
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn surfaces_an_error_object_in_a_2xx_body() {
+        let server = MockSse::start(Script::json(json!({
+            "object": "chat.completion",
+            "choices": [],
+            "error": {"message": "boom", "type": "server_error"}
+        })))
+        .await;
+
+        let response = non_streaming_chat_completion(&server.url, request(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(response.error.unwrap()["message"], json!("boom"));
+        assert!(
+            response.body.error.is_none(),
+            "error is moved out of the body"
+        );
+        assert!(response.stats.unwrap().error.is_some());
+    }
+
+    #[tokio::test]
+    async fn non_2xx_is_an_error() {
+        let server = MockSse::start(Script::error(
+            reqwest::StatusCode::UNAUTHORIZED,
+            json!({"error": {"message": "no"}}),
+        ))
+        .await;
+
+        let result = non_streaming_chat_completion(&server.url, request(), None).await;
+
+        match result {
+            Err(llm_shim::error::Error::Reqwest(e)) => {
+                assert_eq!(e.status(), Some(reqwest::StatusCode::UNAUTHORIZED))
+            }
+            other => panic!("unexpected: {:?}", other.map(|_| ())),
+        }
+    }
+
+    #[tokio::test]
+    async fn remaps_tagged_reasoning_in_the_complete_message() {
+        let server = MockSse::start(Script::json(completion(
+            "<think>planning</think>answer",
+            Some((1, 1)),
+        )))
+        .await;
+
+        let options = ChatCompletionOptions::default().with_reasoning_remapping((
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
+        ));
+
+        let response = non_streaming_chat_completion(&server.url, request(), options)
+            .await
+            .unwrap();
+
+        let message = &response.body.choices[0].message;
+        assert_eq!(message.content.as_deref(), Some("answer"));
+        assert_eq!(
+            message.common.reasoning_content.as_deref(),
+            Some("planning")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_trailing_partial_tag_is_kept_as_content() {
+        let server = MockSse::start(Script::json(completion("answer <thi", Some((1, 1))))).await;
+
+        let options = ChatCompletionOptions::default().with_reasoning_remapping((
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
+        ));
+
+        let response = non_streaming_chat_completion(&server.url, request(), options)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.body.choices[0].message.content.as_deref(),
+            Some("answer <thi")
         );
     }
 }

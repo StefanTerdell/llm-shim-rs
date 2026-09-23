@@ -1,5 +1,7 @@
 mod support;
 
+use async_trait::async_trait;
+use llm_shim::traits::max_tps::MaxTps;
 use llm_shim::{
     apis::responses::{
         models::{
@@ -10,14 +12,23 @@ use llm_shim::{
             },
             lib::{options::ResponsesOptions, streaming::response::StreamingResponsesEvent},
         },
-        non_streaming::non_streaming_responses,
         streaming::streaming_responses,
+        virtual_non_streaming::virtual_non_streaming_responses,
     },
     stats::StreamStats,
 };
 use serde_json::json;
 use support::{openai_responses::*, *};
 use tokio_stream::StreamExt;
+
+struct FixedTps(f32);
+
+#[async_trait]
+impl MaxTps for FixedTps {
+    async fn get(&self) -> Option<f32> {
+        Some(self.0)
+    }
+}
 
 async fn collect(
     server: &MockSse,
@@ -216,7 +227,7 @@ mod non_streaming {
         let server = MockSse::start(simple_text_script(&["Hel", "lo"], 25, 12)).await;
 
         let response =
-            non_streaming_responses(&server.responses_url, non_streaming_request(), None)
+            virtual_non_streaming_responses(&server.responses_url, non_streaming_request(), None)
                 .await
                 .unwrap();
 
@@ -252,7 +263,7 @@ mod non_streaming {
         .await;
 
         let response =
-            non_streaming_responses(&server.responses_url, non_streaming_request(), None)
+            virtual_non_streaming_responses(&server.responses_url, non_streaming_request(), None)
                 .await
                 .unwrap();
 
@@ -282,7 +293,7 @@ mod non_streaming {
         .await;
 
         let response =
-            non_streaming_responses(&server.responses_url, non_streaming_request(), None)
+            virtual_non_streaming_responses(&server.responses_url, non_streaming_request(), None)
                 .await
                 .unwrap();
 
@@ -375,10 +386,13 @@ mod reasoning_remapping {
             ResponsesReasoningPosition::Summary,
         ));
 
-        let response =
-            non_streaming_responses(&server.responses_url, non_streaming_request(), options)
-                .await
-                .unwrap();
+        let response = virtual_non_streaming_responses(
+            &server.responses_url,
+            non_streaming_request(),
+            options,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(response.body.output.len(), 2);
         let OutputItem::Reasoning { summary, .. } = &response.body.output[0] else {
@@ -399,21 +413,11 @@ mod reasoning_remapping {
 
 mod throttling_and_dispatch {
     use super::*;
-    use async_trait::async_trait;
     use llm_shim::{
         apis::responses::{models::api::response::ResponsesResponse, responses},
-        traits::max_tps::MaxTps,
+        non_streaming_mode::NonStreamingMode,
     };
     use std::time::{Duration, Instant};
-
-    struct FixedTps(f32);
-
-    #[async_trait]
-    impl MaxTps for FixedTps {
-        async fn get(&self) -> Option<f32> {
-            Some(self.0)
-        }
-    }
 
     #[tokio::test]
     async fn slows_the_stream_down_to_max_tps_using_estimated_tokens() {
@@ -422,7 +426,7 @@ mod throttling_and_dispatch {
         let server = MockSse::start(simple_text_script(&[chunk; 5], 3, 20)).await;
 
         let throttler = FixedTps(MAX_TPS);
-        let options = ResponsesOptions::default().with_tps_throttler(&throttler);
+        let options = ResponsesOptions::default().with_max_tps(&throttler);
 
         let started = Instant::now();
         let events = collect_with(&server, request(json!({})), options).await;
@@ -440,8 +444,13 @@ mod throttling_and_dispatch {
     }
 
     #[tokio::test]
-    async fn top_level_function_dispatches_on_the_stream_flag() {
-        let server = MockSse::start(simple_text_script(&["hi"], 1, 1)).await;
+    async fn top_level_function_sends_a_real_non_streaming_request_by_default() {
+        let server = MockSse::start(Script::json(response_object(
+            "completed",
+            json!([message_item("msg_1", "hi", "completed")]),
+            Some((1, 1)),
+        )))
+        .await;
 
         let response = responses(&server.responses_url, non_streaming_request(), None)
             .await
@@ -453,10 +462,191 @@ mod throttling_and_dispatch {
             panic!("message")
         };
         assert_eq!(content[0], ContentPart::output_text("hi"));
+    }
+
+    #[tokio::test]
+    async fn top_level_function_streams_when_asked() {
+        let server = MockSse::start(simple_text_script(&["hi"], 1, 1)).await;
 
         let response = responses(&server.responses_url, request(json!({})), None)
             .await
             .unwrap();
         assert!(matches!(response, ResponsesResponse::Streaming(_)));
+    }
+
+    #[tokio::test]
+    async fn top_level_function_can_be_told_to_fold_a_stream() {
+        let server = MockSse::start(simple_text_script(&["hi"], 1, 1)).await;
+
+        let options =
+            ResponsesOptions::default().with_non_streaming_mode(NonStreamingMode::Virtual);
+        let response = responses(&server.responses_url, non_streaming_request(), options)
+            .await
+            .unwrap();
+        let ResponsesResponse::NonStreaming(response) = response else {
+            panic!("expected non-streaming");
+        };
+        let OutputItem::Message { content, .. } = &response.body.output[0] else {
+            panic!("message")
+        };
+        assert_eq!(content[0], ContentPart::output_text("hi"));
+    }
+}
+
+mod real_non_streaming {
+    use super::*;
+    use llm_shim::apis::responses::{
+        models::lib::options::reasoning_remapping::ResponsesReasoningPosition,
+        non_streaming::non_streaming_responses,
+    };
+    use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn sends_one_request_and_passes_the_body_through() {
+        let server = MockSse::start(Script::json(response_object(
+            "completed",
+            json!([message_item("msg_1", "hi", "completed")]),
+            Some((7, 4)),
+        )))
+        .await;
+
+        let response = non_streaming_responses(
+            &server.responses_url,
+            non_streaming_request(),
+            ResponsesOptions::default().with_bearer_token("tok"),
+        )
+        .await
+        .unwrap();
+
+        let sent = server.single_request();
+        assert!(
+            sent.get("stream").is_none_or(|s| s == &json!(false)),
+            "sent: {sent}"
+        );
+        assert_eq!(
+            server.single_request_headers()["authorization"],
+            "Bearer tok"
+        );
+
+        assert_eq!(response.body.additional_properties["id"], json!("resp_1"));
+        assert_eq!(
+            response.body.additional_properties["status"],
+            json!("completed")
+        );
+        let OutputItem::Message { content, .. } = &response.body.output[0] else {
+            panic!("message")
+        };
+        assert_eq!(content[0], ContentPart::output_text("hi"));
+        assert!(response.error.is_none());
+
+        let stats = response.stats.unwrap();
+        assert!(!stats.input_tokens_is_estimate);
+        assert_eq!(stats.input_tokens, 7);
+        assert!(!stats.output_tokens_is_estimate);
+        assert_eq!(stats.output_tokens, 4);
+        assert_eq!(stats.chunks[0].tokens, 4);
+    }
+
+    #[tokio::test]
+    async fn estimates_and_fills_usage_when_the_server_sends_none() {
+        let server = MockSse::start(Script::json(response_object(
+            "completed",
+            json!([message_item("msg_1", "hello there world", "completed")]),
+            None,
+        )))
+        .await;
+
+        let response =
+            non_streaming_responses(&server.responses_url, non_streaming_request(), None)
+                .await
+                .unwrap();
+
+        let stats = response.stats.unwrap();
+        assert!(stats.input_tokens_is_estimate);
+        assert!(stats.output_tokens_is_estimate);
+        assert!(stats.output_tokens > 0);
+        let usage = response.body.usage.flatten().unwrap();
+        assert_eq!(usage.output_tokens, Some(stats.output_tokens));
+        assert_eq!(usage.input_tokens, Some(stats.input_tokens));
+        assert_eq!(
+            usage.total_tokens,
+            Some(stats.input_tokens + stats.output_tokens)
+        );
+    }
+
+    #[tokio::test]
+    async fn sleeps_when_the_request_exceeded_max_tps() {
+        let server = MockSse::start(Script::json(response_object(
+            "completed",
+            json!([message_item("msg_1", "x", "completed")]),
+            Some((1, 50)),
+        )))
+        .await;
+        let throttler = FixedTps(100.0);
+
+        let started = Instant::now();
+        let response = non_streaming_responses(
+            &server.responses_url,
+            non_streaming_request(),
+            ResponsesOptions::default().with_max_tps(&throttler),
+        )
+        .await
+        .unwrap();
+
+        assert!(started.elapsed() >= Duration::from_millis(450));
+        assert!(
+            response.stats.unwrap().chunks[0]
+                .tps_correction_duration
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn surfaces_the_error_field_of_a_failed_response() {
+        let mut body = response_object("failed", json!([]), None);
+        body["error"] = json!({"code": "server_error", "message": "boom"});
+        let server = MockSse::start(Script::json(body)).await;
+
+        let response =
+            non_streaming_responses(&server.responses_url, non_streaming_request(), None)
+                .await
+                .unwrap();
+
+        assert_eq!(response.error.unwrap()["message"], json!("boom"));
+        assert!(response.stats.unwrap().error.is_some());
+    }
+
+    #[tokio::test]
+    async fn remaps_tags_into_a_reasoning_item() {
+        let server = MockSse::start(Script::json(response_object(
+            "completed",
+            json!([message_item(
+                "msg_1",
+                "<think>plan</think>answer",
+                "completed"
+            )]),
+            Some((1, 1)),
+        )))
+        .await;
+
+        let options = ResponsesOptions::default().with_reasoning_remapping((
+            ResponsesReasoningPosition::text_unchecked("<think>", "</think>"),
+            ResponsesReasoningPosition::Summary,
+        ));
+
+        let response =
+            non_streaming_responses(&server.responses_url, non_streaming_request(), options)
+                .await
+                .unwrap();
+
+        assert_eq!(response.body.output.len(), 2);
+        let OutputItem::Reasoning { summary, .. } = &response.body.output[0] else {
+            panic!("reasoning")
+        };
+        assert_eq!(summary[0], ReasoningPart::summary_text("plan"));
+        let OutputItem::Message { content, .. } = &response.body.output[1] else {
+            panic!("message")
+        };
+        assert_eq!(content[0], ContentPart::output_text("answer"));
     }
 }

@@ -1,12 +1,29 @@
 mod support;
 
-use llm_shim::apis::chat_completion::{
-    models::lib::streaming::response::StreamingChatCompletionEvent,
-    non_streaming::non_streaming_chat_completion, streaming::streaming_chat_completion,
+use async_trait::async_trait;
+use llm_shim::{
+    apis::{
+        chat_completion::{
+            models::lib::streaming::response::StreamingChatCompletionEvent,
+            streaming::streaming_chat_completion,
+            virtual_non_streaming::virtual_non_streaming_chat_completion,
+        },
+        embeddings::{embeddings, models::lib::options::EmbeddingsOptions},
+    },
+    traits::max_tps::MaxTps,
 };
 use serde_json::json;
 use support::*;
 use tokio_stream::StreamExt;
+
+struct FixedTps(f32);
+
+#[async_trait]
+impl MaxTps for FixedTps {
+    async fn get(&self) -> Option<f32> {
+        Some(self.0)
+    }
+}
 
 #[tokio::test]
 async fn streaming_response_can_be_moved_to_another_task() {
@@ -39,7 +56,7 @@ async fn non_streaming_future_can_be_spawned() {
     let response = tokio::spawn(async move {
         let body: llm_shim::apis::chat_completion::models::api::request::non_streaming::NonStreamingChatCompletionRequestBody =
             serde_json::from_value(json!({"model": "m", "messages": [{"role": "user", "content": "x"}]})).unwrap();
-        non_streaming_chat_completion(&url, body, None).await.unwrap()
+        virtual_non_streaming_chat_completion(&url, body, None).await.unwrap()
     })
     .await
     .unwrap();
@@ -48,4 +65,37 @@ async fn non_streaming_future_can_be_spawned() {
         response.body.choices[0].message.content.as_deref(),
         Some("hi")
     );
+}
+
+#[tokio::test]
+async fn throttled_one_shot_future_can_be_spawned() {
+    let server = MockSse::start(Script::json(json!({
+        "object": "list",
+        "data": [{"object": "embedding", "index": 0, "embedding": [0.0]}],
+        "model": "m",
+        "usage": {"prompt_tokens": 1, "total_tokens": 1}
+    })))
+    .await;
+    let url = server.embeddings_url.clone();
+
+    let result = tokio::spawn(async move {
+        let throttler = FixedTps(1000.0);
+        let body: llm_shim::apis::embeddings::models::api::request::EmbeddingsRequestBody =
+            serde_json::from_value(json!({"model": "embed-model", "input": "x"})).unwrap();
+
+        embeddings(
+            &url,
+            body,
+            EmbeddingsOptions::default().with_max_tps(&throttler),
+        )
+        .await
+        .unwrap()
+    })
+    .await
+    .unwrap();
+
+    let data = result.body.additional_properties["data"]
+        .as_array()
+        .unwrap();
+    assert_eq!(data.len(), 1);
 }

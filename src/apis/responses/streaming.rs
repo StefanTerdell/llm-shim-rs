@@ -30,7 +30,7 @@ pub async fn streaming_responses<'a>(
     let options = options.into().unwrap_or_default();
 
     let client = options.client.unwrap_or_default();
-    let tps_throttler = options.tps_throttler;
+    let max_tps = options.max_tps;
     let mut remapper = options
         .reasoning_remapping
         .map(ResponsesReasoningRemappingState::new);
@@ -42,7 +42,7 @@ pub async fn streaming_responses<'a>(
     }
 
     let mut stats = StreamStats::new(Instant::now(), body.common.estimate_tokens());
-    let mut pacer = TpsThrottler::new(tps_throttler, stats.requested);
+    let mut pacer = TpsThrottler::new(max_tps, stats.requested);
     let mut stream = sse::send(request).await?;
     let mut frames = JsonFrameBuffer::default();
 

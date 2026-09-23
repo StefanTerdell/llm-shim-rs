@@ -2,153 +2,109 @@ use crate::{
     apis::messages::{
         models::{
             api::{
-                common::{ContentBlock, ContentBlockDelta},
                 request::non_streaming::NonStreamingMessagesRequestBody,
-                response::{
-                    non_streaming::{MessagesResponseBody, NonStreamingMessagesResponse},
-                    streaming::MessagesStreamEvent,
-                },
+                response::non_streaming::{MessagesResponseBody, NonStreamingMessagesResponse},
             },
-            lib::{options::MessagesOptions, streaming::response::StreamingMessagesEvent},
+            lib::options::{MessagesOptions, reasoning_remapping::body::remap_content},
         },
-        streaming::streaming_messages,
+        streaming::DEFAULT_ANTHROPIC_VERSION,
     },
     error::Error,
     stats::StreamStats,
-    traits::merge::Merge,
+    tps_throttler::pace_once,
+    traits::estimate_tokens::EstimateTokens,
 };
 
-use indexmap::IndexMap;
 use reqwest::IntoUrl;
-use serde_json::Value;
-use tokio_stream::StreamExt;
+use std::time::Instant;
 
 pub async fn non_streaming_messages<'a>(
     url: impl IntoUrl,
     body: impl Into<NonStreamingMessagesRequestBody>,
     options: impl Into<Option<MessagesOptions<'a>>>,
 ) -> Result<NonStreamingMessagesResponse, Error> {
-    let mut stream = streaming_messages(url, body.into(), options).await?;
+    let body = body.into();
+    let options = options.into().unwrap_or_default();
+    let client = options.client.unwrap_or_default();
 
-    #[derive(Default)]
-    struct Acc {
-        body: MessagesResponseBody,
-        blocks: IndexMap<u32, (ContentBlock, String)>,
-        stats: Option<StreamStats>,
-        error: Option<Value>,
+    let mut request = client.post(url).json(&body).header(
+        "anthropic-version",
+        options
+            .anthropic_version
+            .unwrap_or_else(|| DEFAULT_ANTHROPIC_VERSION.to_string()),
+    );
+
+    if let Some(api_key) = options.api_key {
+        request = request.header("x-api-key", api_key.expose());
     }
 
-    let mut acc = Acc::default();
+    if let Some(bearer_token) = options.bearer_token {
+        request = request.bearer_auth(bearer_token.expose());
+    }
 
-    while let Some(item) = stream.try_next().await? {
-        let event = match item {
-            StreamingMessagesEvent::Done { stats } => {
-                acc.stats = Some(stats);
-                continue;
-            }
-            StreamingMessagesEvent::Event { event } => event,
-            StreamingMessagesEvent::EventError { stats, event } => {
-                acc.stats = Some(stats);
-                event
-            }
-        };
+    let mut stats = StreamStats::new(Instant::now(), body.common.estimate_tokens());
 
-        match event {
-            MessagesStreamEvent::MessageStart { message, .. } => {
-                acc.body = message;
-                acc.body.content.clear();
-            }
-            MessagesStreamEvent::ContentBlockStart {
-                index,
-                content_block,
-                ..
-            } => {
-                acc.blocks.insert(index, (content_block, String::new()));
-            }
-            MessagesStreamEvent::ContentBlockDelta { index, delta, .. } => {
-                if let Some((block, partial_json)) = acc.blocks.get_mut(&index) {
-                    apply_delta(block, partial_json, delta);
-                }
-            }
-            MessagesStreamEvent::ContentBlockStop { index, .. } => {
-                if let Some((ContentBlock::ToolUse { input, .. }, partial_json)) =
-                    acc.blocks.get_mut(&index)
-                    && !partial_json.is_empty()
-                {
-                    *input = serde_json::from_str(partial_json)
-                        .unwrap_or_else(|_| Value::String(std::mem::take(partial_json)));
-                }
-            }
-            MessagesStreamEvent::MessageDelta { delta, usage, .. } => {
-                if delta.stop_reason.is_some() {
-                    acc.body.stop_reason = delta.stop_reason;
-                }
+    let (mut body, chunk) = pace_once(
+        options.max_tps,
+        options.max_tps_sample_interval,
+        async {
+            Ok::<_, Error>(
+                request
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json::<MessagesResponseBody>()
+                    .await?,
+            )
+        },
+        output_tokens,
+    )
+    .await?;
 
-                if delta.stop_sequence.is_some() {
-                    acc.body.stop_sequence = delta.stop_sequence;
-                }
+    if let Some(input_tokens) = body.usage.input_tokens {
+        stats.input_tokens_is_estimate = false;
+        stats.input_tokens = input_tokens;
+    }
 
-                acc.body
-                    .additional_properties
-                    .extend(delta.additional_properties);
-
-                if let Some(usage) = usage {
-                    acc.body.usage = std::mem::take(&mut acc.body.usage).merge(usage);
-                }
-            }
-            MessagesStreamEvent::Error { error, .. } => {
-                acc.error = Some(error);
-            }
-            _ => {}
+    match body.usage.output_tokens {
+        Some(output_tokens) => {
+            stats.output_tokens_is_estimate = false;
+            stats.output_tokens = output_tokens;
         }
+        None => stats.output_tokens = output_tokens(&body),
     }
 
-    acc.blocks.sort_keys();
-    acc.body.content = acc.blocks.into_values().map(|(block, _)| block).collect();
+    stats.chunks.push(chunk);
 
-    if let Some(stats) = &acc.stats {
-        acc.body
-            .usage
-            .input_tokens
-            .get_or_insert(stats.input_tokens);
-        acc.body
-            .usage
-            .output_tokens
-            .get_or_insert(stats.output_tokens);
+    if let Some(config) = &options.reasoning_remapping {
+        body.content = remap_content(std::mem::take(&mut body.content), config);
     }
+
+    let error = body
+        .additional_properties
+        .get("error")
+        .filter(|error| !error.is_null())
+        .cloned();
+
+    if let Some(error) = &error {
+        stats.error = Some(error.to_string());
+    }
+
+    body.usage.input_tokens.get_or_insert(stats.input_tokens);
+    body.usage.output_tokens.get_or_insert(stats.output_tokens);
 
     Ok(NonStreamingMessagesResponse {
-        body: acc.body,
-        stats: acc.stats,
-        error: acc.error,
+        body,
+        stats: Some(stats),
+        error,
     })
 }
 
-fn apply_delta(block: &mut ContentBlock, partial_json: &mut String, delta: ContentBlockDelta) {
-    match (block, delta) {
-        (ContentBlock::Text { text, .. }, ContentBlockDelta::TextDelta { text: t, .. }) => {
-            text.push_str(&t);
-        }
-        (
-            ContentBlock::Thinking { thinking, .. },
-            ContentBlockDelta::ThinkingDelta { thinking: t, .. },
-        ) => {
-            thinking.push_str(&t);
-        }
-        (
-            ContentBlock::Thinking { signature, .. },
-            ContentBlockDelta::SignatureDelta { signature: s, .. },
-        ) => {
-            signature.push_str(&s);
-        }
-        (
-            ContentBlock::ToolUse { .. },
-            ContentBlockDelta::InputJsonDelta {
-                partial_json: p, ..
-            },
-        ) => {
-            partial_json.push_str(&p);
-        }
-        _ => {}
-    }
+fn output_tokens(body: &MessagesResponseBody) -> u32 {
+    body.usage.output_tokens.unwrap_or_else(|| {
+        body.content
+            .iter()
+            .map(EstimateTokens::estimate_tokens)
+            .sum()
+    })
 }

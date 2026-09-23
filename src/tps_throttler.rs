@@ -1,6 +1,6 @@
 use crate::{stats::ChunkStats, traits::max_tps::MaxTps};
 use std::time::{Duration, Instant};
-use tokio::time::sleep;
+use tokio::{sync::Mutex, time::sleep};
 
 pub struct TpsThrottler<'a> {
     max_tps: Option<&'a dyn MaxTps>,
@@ -51,25 +51,33 @@ impl<'a> TpsThrottler<'a> {
     }
 }
 
+pub const DEFAULT_MAX_TPS_SAMPLE_INTERVAL: Duration = Duration::from_millis(250);
+
 pub async fn pace_once<T, E, F>(
     max_tps: Option<&dyn MaxTps>,
+    sample_interval: Option<Duration>,
     request: F,
     tokens: impl FnOnce(&T) -> u32,
 ) -> Result<(T, ChunkStats), E>
 where
     F: Future<Output = Result<T, E>>,
 {
-    let before = MaxTps::get(&max_tps).await;
+    let samples = Mutex::new(Samples::default());
+
+    if let Some(sample) = MaxTps::get(&max_tps).await {
+        samples.lock().await.push(sample);
+    }
+
     let started = Instant::now();
-    let value = request.await?;
-    let after = MaxTps::get(&max_tps).await;
+
+    let value = tokio::select! {
+        result = request => result?,
+        _ = sample_max_tps(max_tps, sample_interval, &samples) => unreachable!("sampler never completes"),
+    };
+
     let mut duration = started.elapsed();
     let tokens = tokens(&value);
-
-    let max_tps = match (before, after) {
-        (Some(a), Some(b)) => Some((a + b) / 2.0),
-        (a, b) => a.or(b),
-    };
+    let max_tps = samples.into_inner().mean();
 
     let tps_correction_duration = max_tps.and_then(|max_tps| {
         let needed = tokens as f32 / max_tps;
@@ -91,4 +99,54 @@ where
             tps_correction_duration,
         },
     ))
+}
+
+#[derive(Default)]
+struct Samples {
+    sum: f64,
+    count: u32,
+}
+
+impl Samples {
+    fn push(&mut self, sample: f32) {
+        self.sum += sample as f64;
+        self.count += 1;
+    }
+
+    fn mean(&self) -> Option<f32> {
+        (self.count > 0).then(|| (self.sum / self.count as f64) as f32)
+    }
+}
+
+async fn sample_max_tps(
+    max_tps: Option<&dyn MaxTps>,
+    interval: Option<Duration>,
+    samples: &Mutex<Samples>,
+) {
+    let (Some(interval), Some(max_tps)) = (interval, max_tps) else {
+        std::future::pending::<()>().await;
+        unreachable!()
+    };
+
+    if interval.is_zero() {
+        loop {
+            if let Some(sample) = max_tps.get().await {
+                samples.lock().await.push(sample);
+            }
+
+            tokio::task::yield_now().await;
+        }
+    }
+
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await;
+
+    loop {
+        ticker.tick().await;
+
+        if let Some(sample) = max_tps.get().await {
+            samples.lock().await.push(sample);
+        }
+    }
 }

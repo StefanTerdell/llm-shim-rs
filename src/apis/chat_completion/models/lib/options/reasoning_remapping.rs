@@ -82,6 +82,16 @@ impl ChatCompletionReasoningRemappingState {
         }
     }
 
+    pub fn flush(&mut self, index: u32, inner: &mut ChatCompletionResponseMessage) {
+        let Some(state) = self.choices.get_mut(&(index as usize)) else {
+            return;
+        };
+
+        if let Some(partial) = state.partial.take() {
+            inner.content.get_or_insert_default().push_str(&partial);
+        }
+    }
+
     pub fn apply(&mut self, index: u32, inner: &mut ChatCompletionResponseMessage) {
         let index = index as usize;
 
@@ -404,6 +414,22 @@ mod tests {
             from_chunks(chunks),
             from_content("message").with_reasoning_content("thought")
         );
+    }
+
+    #[test]
+    fn flush_restores_a_trailing_partial_start_tag() {
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+            ChatCompletionReasoningPosition::ReasoningContent,
+        ));
+        let mut message = from_content("hello <thi");
+
+        state.apply(0, &mut message);
+        assert_eq!(message.content.as_deref(), Some("hello "));
+
+        state.flush(0, &mut message);
+        assert_eq!(message.content.as_deref(), Some("hello <thi"));
+        assert!(message.common.reasoning_content.is_none());
     }
 
     mod helpers {

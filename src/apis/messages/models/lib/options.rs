@@ -1,21 +1,38 @@
 use reqwest::Client;
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 use stefans_utils::{prelude::AsClone, secret::Secret};
 pub mod reasoning_remapping;
 
 use crate::{
     apis::messages::models::lib::options::reasoning_remapping::MessagesReasoningRemappingConfig,
+    non_streaming_mode::NonStreamingMode, tps_throttler::DEFAULT_MAX_TPS_SAMPLE_INTERVAL,
     traits::max_tps::MaxTps,
 };
 
-#[derive(Default)]
 pub struct MessagesOptions<'a> {
     pub client: Option<Client>,
     pub api_key: Option<Secret<String>>,
     pub bearer_token: Option<Secret<String>>,
     pub anthropic_version: Option<String>,
-    pub tps_throttler: Option<&'a dyn MaxTps>,
+    pub max_tps: Option<&'a dyn MaxTps>,
+    pub max_tps_sample_interval: Option<Duration>,
     pub reasoning_remapping: Option<MessagesReasoningRemappingConfig>,
+    pub non_streaming_mode: NonStreamingMode,
+}
+
+impl Default for MessagesOptions<'_> {
+    fn default() -> Self {
+        Self {
+            client: None,
+            api_key: None,
+            bearer_token: None,
+            anthropic_version: None,
+            max_tps: None,
+            max_tps_sample_interval: Some(DEFAULT_MAX_TPS_SAMPLE_INTERVAL),
+            reasoning_remapping: None,
+            non_streaming_mode: NonStreamingMode::default(),
+        }
+    }
 }
 
 impl MessagesOptions<'_> {
@@ -54,15 +71,25 @@ impl MessagesOptions<'_> {
         self
     }
 
-    pub fn with_tps_throttler<'a>(self, tps_throttler: &'a dyn MaxTps) -> MessagesOptions<'a> {
+    pub fn with_max_tps<'a>(self, max_tps: &'a dyn MaxTps) -> MessagesOptions<'a> {
         MessagesOptions {
-            tps_throttler: Some(tps_throttler),
+            max_tps: Some(max_tps),
             ..self
         }
     }
 
-    pub fn without_tps_throttler(mut self) -> Self {
-        self.tps_throttler = None;
+    pub fn without_max_tps(mut self) -> Self {
+        self.max_tps = None;
+        self
+    }
+
+    pub fn with_max_tps_sample_interval(mut self, interval: Duration) -> Self {
+        self.max_tps_sample_interval = Some(interval);
+        self
+    }
+
+    pub fn without_max_tps_sample_interval(mut self) -> Self {
+        self.max_tps_sample_interval = None;
         self
     }
 
@@ -76,6 +103,11 @@ impl MessagesOptions<'_> {
 
     pub fn without_reasoning_remapping(mut self) -> Self {
         self.reasoning_remapping = None;
+        self
+    }
+
+    pub fn with_non_streaming_mode(mut self, mode: NonStreamingMode) -> Self {
+        self.non_streaming_mode = mode;
         self
     }
 }

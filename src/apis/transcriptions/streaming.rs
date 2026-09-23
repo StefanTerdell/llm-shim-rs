@@ -25,7 +25,7 @@ pub async fn streaming_transcriptions<'a>(
 ) -> Result<StreamingTranscriptionsResponse<'a>, Error> {
     let options = options.into().unwrap_or_default();
     let client = options.client.unwrap_or_default();
-    let tps_throttler = options.tps_throttler;
+    let max_tps = options.max_tps;
 
     let mut builder = client.post(url).multipart(request.into_form(Some(true))?);
 
@@ -34,7 +34,7 @@ pub async fn streaming_transcriptions<'a>(
     }
 
     let mut stats = StreamStats::new(Instant::now(), 0);
-    let mut pacer = TpsThrottler::new(tps_throttler, stats.requested);
+    let mut pacer = TpsThrottler::new(max_tps, stats.requested);
     let mut stream = sse::send(builder).await?;
     let mut frames = JsonFrameBuffer::default();
 

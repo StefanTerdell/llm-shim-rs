@@ -111,7 +111,7 @@ async fn sleeps_before_returning_when_the_request_exceeded_max_tps() {
     let result = rerank(
         &server.rerank_url,
         request(json!({})),
-        RerankOptions::default().with_tps_throttler(&throttler),
+        RerankOptions::default().with_max_tps(&throttler),
     )
     .await
     .unwrap();

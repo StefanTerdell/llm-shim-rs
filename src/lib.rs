@@ -4,6 +4,7 @@ extern crate derive_aliases;
 
 pub mod apis;
 pub mod error;
+pub mod non_streaming_mode;
 pub mod prelude;
 pub mod reexports;
 pub mod sse;

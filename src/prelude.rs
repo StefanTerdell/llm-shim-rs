@@ -1,6 +1,8 @@
 pub use crate::{
     error::Error,
+    non_streaming_mode::NonStreamingMode,
     stats::{ChunkStats, StreamStats},
+    tps_throttler::DEFAULT_MAX_TPS_SAMPLE_INTERVAL,
     traits::{estimate_tokens::EstimateTokens, into_url_ext::IntoUrlExt, max_tps::MaxTps},
 };
 
@@ -34,6 +36,7 @@ pub use crate::apis::chat_completion::models::lib::streaming::response::Streamin
 pub use crate::apis::chat_completion::models::lib::streaming::response::StreamingChatCompletionResponse;
 pub use crate::apis::chat_completion::non_streaming::non_streaming_chat_completion;
 pub use crate::apis::chat_completion::streaming::streaming_chat_completion;
+pub use crate::apis::chat_completion::virtual_non_streaming::virtual_non_streaming_chat_completion;
 pub use crate::apis::embeddings::embeddings;
 pub use crate::apis::embeddings::models::api::request::EmbeddingsInput;
 pub use crate::apis::embeddings::models::api::request::EmbeddingsRequestBody;
@@ -60,10 +63,12 @@ pub use crate::apis::messages::models::lib::options::MessagesOptions;
 pub use crate::apis::messages::models::lib::options::reasoning_remapping::MessagesReasoningPosition;
 pub use crate::apis::messages::models::lib::options::reasoning_remapping::MessagesReasoningRemappingConfig;
 pub use crate::apis::messages::models::lib::options::reasoning_remapping::MessagesReasoningRemappingState;
+pub use crate::apis::messages::models::lib::options::reasoning_remapping::body::remap_content;
 pub use crate::apis::messages::models::lib::streaming::response::StreamingMessagesEvent;
 pub use crate::apis::messages::models::lib::streaming::response::StreamingMessagesResponse;
 pub use crate::apis::messages::non_streaming::non_streaming_messages;
 pub use crate::apis::messages::streaming::streaming_messages;
+pub use crate::apis::messages::virtual_non_streaming::virtual_non_streaming_messages;
 pub use crate::apis::rerank::models::api::request::RerankRequestBody;
 pub use crate::apis::rerank::models::api::response::RerankResponse;
 pub use crate::apis::rerank::models::api::response::RerankResponseBody;
@@ -88,11 +93,13 @@ pub use crate::apis::responses::models::lib::options::ResponsesOptions;
 pub use crate::apis::responses::models::lib::options::reasoning_remapping::ResponsesReasoningPosition;
 pub use crate::apis::responses::models::lib::options::reasoning_remapping::ResponsesReasoningRemappingConfig;
 pub use crate::apis::responses::models::lib::options::reasoning_remapping::ResponsesReasoningRemappingState;
+pub use crate::apis::responses::models::lib::options::reasoning_remapping::body::remap_output;
 pub use crate::apis::responses::models::lib::streaming::response::StreamingResponsesEvent;
 pub use crate::apis::responses::models::lib::streaming::response::StreamingResponsesResponse;
 pub use crate::apis::responses::non_streaming::non_streaming_responses;
 pub use crate::apis::responses::responses;
 pub use crate::apis::responses::streaming::streaming_responses;
+pub use crate::apis::responses::virtual_non_streaming::virtual_non_streaming_responses;
 pub use crate::apis::transcriptions::models::api::request::AudioFile;
 pub use crate::apis::transcriptions::models::api::request::TranscriptionsFields;
 pub use crate::apis::transcriptions::models::api::request::TranscriptionsRequest;

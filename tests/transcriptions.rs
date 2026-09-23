@@ -324,7 +324,7 @@ async fn non_streaming_sleeps_when_the_request_exceeded_max_tps() {
     let response = non_streaming_transcriptions(
         &server.transcriptions_url,
         request(json!({})),
-        TranscriptionsOptions::default().with_tps_throttler(&throttler),
+        TranscriptionsOptions::default().with_max_tps(&throttler),
     )
     .await
     .unwrap();

@@ -1,20 +1,36 @@
 use reqwest::Client;
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 use stefans_utils::{prelude::AsClone, secret::Secret};
 pub mod reasoning_remapping;
 
 use crate::{
     apis::chat_completion::models::lib::options::reasoning_remapping::ChatCompletionReasoningRemappingConfig,
+    non_streaming_mode::NonStreamingMode, tps_throttler::DEFAULT_MAX_TPS_SAMPLE_INTERVAL,
     traits::max_tps::MaxTps,
 };
 
-#[derive(Default)]
 pub struct ChatCompletionOptions<'a> {
     pub client: Option<Client>,
     pub bearer_token: Option<Secret<String>>,
     pub max_tps: Option<&'a dyn MaxTps>,
+    pub max_tps_sample_interval: Option<Duration>,
     pub reasoning_remapping: Option<ChatCompletionReasoningRemappingConfig>,
     pub output_token_counting: OutputTokenCounting,
+    pub non_streaming_mode: NonStreamingMode,
+}
+
+impl Default for ChatCompletionOptions<'_> {
+    fn default() -> Self {
+        Self {
+            client: None,
+            bearer_token: None,
+            max_tps: None,
+            max_tps_sample_interval: Some(DEFAULT_MAX_TPS_SAMPLE_INTERVAL),
+            reasoning_remapping: None,
+            output_token_counting: OutputTokenCounting::default(),
+            non_streaming_mode: NonStreamingMode::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -45,15 +61,25 @@ impl ChatCompletionOptions<'_> {
         self
     }
 
-    pub fn with_max_tps<'a>(self, tps_throttler: &'a dyn MaxTps) -> ChatCompletionOptions<'a> {
+    pub fn with_max_tps<'a>(self, max_tps: &'a dyn MaxTps) -> ChatCompletionOptions<'a> {
         ChatCompletionOptions {
-            max_tps: Some(tps_throttler),
+            max_tps: Some(max_tps),
             ..self
         }
     }
 
     pub fn without_max_tps(mut self) -> Self {
         self.max_tps = None;
+        self
+    }
+
+    pub fn with_max_tps_sample_interval(mut self, interval: Duration) -> Self {
+        self.max_tps_sample_interval = Some(interval);
+        self
+    }
+
+    pub fn without_max_tps_sample_interval(mut self) -> Self {
+        self.max_tps_sample_interval = None;
         self
     }
 
@@ -75,6 +101,11 @@ impl ChatCompletionOptions<'_> {
         output_token_counting: OutputTokenCounting,
     ) -> Self {
         self.output_token_counting = output_token_counting;
+        self
+    }
+
+    pub fn with_non_streaming_mode(mut self, mode: NonStreamingMode) -> Self {
+        self.non_streaming_mode = mode;
         self
     }
 }

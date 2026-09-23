@@ -1,31 +1,21 @@
 use crate::{
-    apis::chat_completion::{
-        models::{
-            api::{
-                common::ChatCompletionUsage,
-                request::non_streaming::NonStreamingChatCompletionRequestBody,
-                response::non_streaming::{
-                    NonStreamingChatCompletionChoice, NonStreamingChatCompletionResponse,
-                    NonStreamingChatCompletionResponseBody,
-                },
-            },
-            lib::{
-                options::ChatCompletionOptions, streaming::response::StreamingChatCompletionEvent,
+    apis::chat_completion::models::{
+        api::{
+            request::non_streaming::NonStreamingChatCompletionRequestBody,
+            response::non_streaming::{
+                NonStreamingChatCompletionResponse, NonStreamingChatCompletionResponseBody,
             },
         },
-        streaming::streaming_chat_completion,
+        lib::options::ChatCompletionOptions,
     },
     error::Error,
     stats::StreamStats,
+    tps_throttler::pace_once,
     traits::estimate_tokens::EstimateTokens,
 };
 
-use itertools::Itertools;
 use reqwest::IntoUrl;
-use serde_json::Value;
-use std::collections::HashMap;
-use stefans_utils::prelude::MapInto;
-use tokio_stream::StreamExt;
+use std::time::Instant;
 
 pub async fn non_streaming_chat_completion<'a>(
     url: impl IntoUrl,
@@ -33,75 +23,78 @@ pub async fn non_streaming_chat_completion<'a>(
     options: impl Into<Option<ChatCompletionOptions<'a>>>,
 ) -> Result<NonStreamingChatCompletionResponse, Error> {
     let body = body.into();
-    let model = body.common.model.clone();
-    let prompt_tokens_estimate = body.common.estimate_tokens();
+    let options = options.into().unwrap_or_default();
+    let client = options.client.unwrap_or_default();
+    let mut remapper = options
+        .reasoning_remapping
+        .map(|config| config.into_state());
 
-    let mut stream = streaming_chat_completion(url, body, options).await?;
+    let mut request = client.post(url).json(&body);
 
-    #[derive(Default)]
-    struct Acc {
-        choices: HashMap<u32, NonStreamingChatCompletionChoice>,
-        usage: Option<ChatCompletionUsage>,
-        stats: Option<StreamStats>,
-        error: Option<Value>,
+    if let Some(bearer_token) = options.bearer_token {
+        request = request.bearer_auth(bearer_token.expose());
     }
 
-    let mut acc = Acc::default();
+    let mut stats = StreamStats::new(Instant::now(), body.common.estimate_tokens());
 
-    while let Some(event) = stream.try_next().await? {
-        let (event_stats_opt, chunk_opt) = match event {
-            StreamingChatCompletionEvent::Done { stats } => (Some(stats), None),
-            StreamingChatCompletionEvent::Chunk { chunk } => (None, Some(chunk)),
-            StreamingChatCompletionEvent::ChunkError { stats, chunk } => (Some(stats), Some(chunk)),
-        };
+    let (mut body, chunk) = pace_once(
+        options.max_tps,
+        options.max_tps_sample_interval,
+        async {
+            Ok::<_, Error>(
+                request
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json::<NonStreamingChatCompletionResponseBody>()
+                    .await?,
+            )
+        },
+        output_tokens,
+    )
+    .await?;
 
-        if event_stats_opt.is_some() {
-            acc.stats = event_stats_opt;
-        };
+    match &body.usage {
+        Some(usage) => {
+            stats.input_tokens_is_estimate = false;
+            stats.input_tokens = usage.prompt_tokens();
+            stats.output_tokens_is_estimate = false;
+            stats.output_tokens = usage.completion_tokens();
+        }
+        None => stats.output_tokens = output_tokens(&body),
+    }
 
-        if let Some(chunk) = chunk_opt {
-            if chunk.usage.is_some() {
-                acc.usage = chunk.usage;
-            };
+    stats.chunks.push(chunk);
 
-            if chunk.error.is_some() {
-                acc.error = chunk.error;
-            }
-
-            if let Some(choices) = chunk.choices {
-                for choice in choices {
-                    let index = choice.common.index;
-
-                    let value = match acc.choices.remove(&index) {
-                        Some(prev) => prev + choice,
-                        None => choice.into(),
-                    };
-
-                    acc.choices.insert(index, value);
-                }
-            }
+    if let Some(remapper) = &mut remapper {
+        for choice in &mut body.choices {
+            remapper.apply(choice.common.index, &mut choice.message);
+            remapper.flush(choice.common.index, &mut choice.message);
         }
     }
 
-    let choices = acc.choices.into_values().collect_vec();
+    let error = body.error.take();
 
-    let usage = acc
-        .usage
-        .or_else(|| acc.stats.as_ref().map_into())
-        .unwrap_or_else(|| {
-            ChatCompletionUsage::default()
-                .with_prompt_tokens(prompt_tokens_estimate)
-                .with_completion_tokens(choices.iter().map(|c| c.message.estimate_tokens()).sum())
-        });
+    if let Some(error) = &error {
+        stats.error = Some(error.to_string());
+    }
+
+    body.usage.get_or_insert_with(|| (&stats).into());
 
     Ok(NonStreamingChatCompletionResponse {
-        body: NonStreamingChatCompletionResponseBody {
-            object: Default::default(),
-            model,
-            choices,
-            usage,
-        },
-        stats: acc.stats,
-        error: acc.error,
+        body,
+        stats: Some(stats),
+        error,
     })
+}
+
+fn output_tokens(body: &NonStreamingChatCompletionResponseBody) -> u32 {
+    match &body.usage {
+        Some(usage) => usage.completion_tokens(),
+        None => body
+            .choices
+            .iter()
+            .map(|choice| choice.message.estimate_tokens())
+            .sum(),
+    }
 }
