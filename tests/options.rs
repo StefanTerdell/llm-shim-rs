@@ -124,10 +124,10 @@ mod non_streaming_mode {
     }
 
     #[test]
-    fn defaults_to_real() {
+    fn defaults_to_virtual() {
         assert_eq!(
             ChatCompletionOptions::default().non_streaming_mode,
-            NonStreamingMode::Real
+            NonStreamingMode::Virtual
         );
     }
 
@@ -140,15 +140,16 @@ mod non_streaming_mode {
         })))
         .await;
 
-        let response = chat_completion(&server.url, request(), None).await.unwrap();
+        let options =
+            ChatCompletionOptions::default().with_non_streaming_mode(NonStreamingMode::Real);
+        let response = chat_completion(&server.url, request(), options)
+            .await
+            .unwrap();
 
         let ChatCompletionResponse::NonStreaming(response) = response else {
             panic!("expected non-streaming");
         };
-        assert_eq!(
-            response.body.choices[0].message.content.as_deref(),
-            Some("hi")
-        );
+        assert_eq!(response.body.choices[0].message.content(), Some("hi"));
         assert!(
             server
                 .single_request()
@@ -158,22 +159,15 @@ mod non_streaming_mode {
     }
 
     #[tokio::test]
-    async fn virtual_mode_streams_and_folds() {
+    async fn virtual_mode_streams_and_folds_by_default() {
         let server = MockSse::start(Script::sse([data(delta(0, "hi")), done()])).await;
 
-        let options =
-            ChatCompletionOptions::default().with_non_streaming_mode(NonStreamingMode::Virtual);
-        let response = chat_completion(&server.url, request(), options)
-            .await
-            .unwrap();
+        let response = chat_completion(&server.url, request(), None).await.unwrap();
 
         let ChatCompletionResponse::NonStreaming(response) = response else {
             panic!("expected non-streaming");
         };
-        assert_eq!(
-            response.body.choices[0].message.content.as_deref(),
-            Some("hi")
-        );
+        assert_eq!(response.body.choices[0].message.content(), Some("hi"));
         assert_eq!(server.single_request()["stream"], json!(true));
     }
 }

@@ -444,7 +444,32 @@ mod throttling_and_dispatch {
     }
 
     #[tokio::test]
-    async fn top_level_function_sends_a_real_non_streaming_request_by_default() {
+    async fn top_level_function_streams_and_assembles_non_streaming_requests_by_default() {
+        let server = MockSse::start(Script::sse([
+            event(created()),
+            event(completed(
+                json!([message_item("msg_1", "hi", "completed")]),
+                1,
+                1,
+            )),
+        ]))
+        .await;
+
+        let response = responses(&server.responses_url, non_streaming_request(), None)
+            .await
+            .unwrap();
+        let ResponsesResponse::NonStreaming(response) = response else {
+            panic!("expected non-streaming");
+        };
+        let OutputItem::Message { content, .. } = &response.body.output[0] else {
+            panic!("message")
+        };
+        assert_eq!(content[0], ContentPart::output_text("hi"));
+        assert_eq!(server.single_request()["stream"], json!(true));
+    }
+
+    #[tokio::test]
+    async fn top_level_function_sends_a_real_non_streaming_request_when_asked() {
         let server = MockSse::start(Script::json(response_object(
             "completed",
             json!([message_item("msg_1", "hi", "completed")]),
@@ -452,7 +477,9 @@ mod throttling_and_dispatch {
         )))
         .await;
 
-        let response = responses(&server.responses_url, non_streaming_request(), None)
+        let options = llm_shim::apis::responses::models::lib::options::ResponsesOptions::default()
+            .with_non_streaming_mode(llm_shim::non_streaming_mode::NonStreamingMode::Real);
+        let response = responses(&server.responses_url, non_streaming_request(), options)
             .await
             .unwrap();
         let ResponsesResponse::NonStreaming(response) = response else {

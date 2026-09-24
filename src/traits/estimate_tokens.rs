@@ -57,9 +57,20 @@ impl EstimateTokens for CommonChatCompletionMessage {
     fn estimate_tokens(&self) -> u32 {
         // ChatML-ish per-message frame: <|im_start|>{role}\n … <|im_end|>\n
         // Harmony (gpt-oss) is heavier with channel markers, so treat this as a floor.
+        // Only a message that opens a frame (carries a role) pays it, so streaming
+        // deltas after the first count their text alone.
         const PER_MESSAGE_OVERHEAD: u32 = 4;
 
-        let mut total = PER_MESSAGE_OVERHEAD;
+        let mut total = if self.additional_properties.contains_key("role") {
+            PER_MESSAGE_OVERHEAD
+        } else {
+            0
+        };
+
+        total += self
+            .reasoning_content()
+            .map_or(0, EstimateTokens::estimate_tokens)
+            + self.reasoning().map_or(0, EstimateTokens::estimate_tokens);
 
         // Tool calls cost tokens too: fn name + the arguments JSON string.
         for call in self.tool_calls.iter().flatten() {
@@ -82,12 +93,7 @@ impl EstimateTokens for CommonChatCompletionMessage {
 
 impl EstimateTokens for ChatCompletionResponseMessage {
     fn estimate_tokens(&self) -> u32 {
-        self.common.estimate_tokens()
-            + self
-                .content
-                .as_ref()
-                .map(|c| c.estimate_tokens())
-                .unwrap_or_default()
+        self.common.estimate_tokens() + self.content().map_or(0, EstimateTokens::estimate_tokens)
     }
 }
 

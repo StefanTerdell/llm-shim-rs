@@ -4,10 +4,16 @@ use crate::{
             request::streaming::{
                 StreamingChatCompletionRequestBody, StreamingChatCompletionRequestBodyStreamOptions,
             },
-            response::streaming::StreamingChatCompletionChunk,
+            response::{
+                common::{ChatCompletionResponseMessage, CommonChatCompletionChoice},
+                streaming::{StreamingChatCompletionChoice, StreamingChatCompletionChunk},
+            },
         },
         lib::{
-            options::{ChatCompletionOptions, OutputTokenCounting},
+            options::{
+                ChatCompletionOptions, OutputTokenCounting,
+                reasoning_remapping::ChatCompletionReasoningRemappingState,
+            },
             streaming::response::{StreamingChatCompletionEvent, StreamingChatCompletionResponse},
         },
     },
@@ -19,6 +25,7 @@ use crate::{
 };
 
 use async_stream::try_stream;
+use indexmap::IndexMap;
 use reqwest::IntoUrl;
 use std::time::Instant;
 use stefans_utils::prelude::AsBool;
@@ -85,8 +92,16 @@ pub async fn streaming_chat_completion<'a>(
     let mut frames = JsonFrameBuffer::default();
 
     Ok(Box::pin(try_stream! {
+        let mut last_metadata = IndexMap::new();
+
         while let Some(Event { data, .. }) = stream.next().await.transpose()? {
             if data == "[DONE]" {
+                if let Some(state) = &mut reasoning_remapping_state
+                    && let Some(chunk) = closing_chunk(state, last_metadata)
+                {
+                    yield StreamingChatCompletionEvent::Chunk { chunk };
+                }
+
                 yield StreamingChatCompletionEvent::Done { stats };
                 break;
             }
@@ -95,12 +110,14 @@ pub async fn streaming_chat_completion<'a>(
                 continue;
             };
 
+            last_metadata = chunk.additional_properties.clone();
+
             if let Some(choices) = &mut chunk.choices {
                 let mut chunk_tokens = 0;
 
                 for choice in choices {
                     if let Some(logprobs) = choice.common.logprobs.take() {
-                        let count: u32 = logprobs.values().map(|v| v.len() as u32).sum();
+                        let count: u32 = logprobs.values().flatten().map(|v| v.len() as u32).sum();
                         stats.output_tokens_is_estimate = false;
                         stats.output_tokens += count;
                         chunk_tokens += count;
@@ -110,9 +127,11 @@ pub async fn streaming_chat_completion<'a>(
                         }
                     } else {
                         let count = choice.delta.estimate_tokens();
-                        stats.output_tokens_is_estimate = true;
-                        stats.output_tokens += count;
-                        chunk_tokens += count;
+                        if count > 0 {
+                            stats.output_tokens_is_estimate = true;
+                            stats.output_tokens += count;
+                            chunk_tokens += count;
+                        }
                     }
 
                     if let Some(state) = &mut reasoning_remapping_state {
@@ -143,4 +162,43 @@ pub async fn streaming_chat_completion<'a>(
             yield StreamingChatCompletionEvent::Chunk { chunk };
         }
     }))
+}
+
+/// Closes any reasoning section the stream left open, as one extra chunk that
+/// reuses the stream's metadata (id, model, created, ...).
+fn closing_chunk(
+    state: &mut ChatCompletionReasoningRemappingState,
+    metadata: IndexMap<String, serde_json::Value>,
+) -> Option<StreamingChatCompletionChunk> {
+    let choices: Vec<StreamingChatCompletionChoice> = state
+        .open_indices()
+        .into_iter()
+        .filter_map(|index| {
+            let mut delta = ChatCompletionResponseMessage {
+                content: None,
+                common: Default::default(),
+            };
+            state.flush(index, &mut delta);
+
+            let is_empty = delta.content().is_none()
+                && delta.common.reasoning().is_none()
+                && delta.common.reasoning_content().is_none();
+
+            (!is_empty).then_some(StreamingChatCompletionChoice {
+                delta,
+                common: CommonChatCompletionChoice {
+                    index,
+                    logprobs: None,
+                    additional_properties: Default::default(),
+                },
+            })
+        })
+        .collect();
+
+    (!choices.is_empty()).then_some(StreamingChatCompletionChunk {
+        error: None,
+        choices: Some(choices),
+        usage: None,
+        additional_properties: metadata,
+    })
 }

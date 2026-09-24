@@ -8,13 +8,57 @@ use serde_json::Value;
 use std::ops::Add;
 
 #[serde_with::skip_serializing_none]
-#[derive(..ApiModel)]
+#[derive(..ApiModel, Default)]
 pub struct CommonChatCompletionMessage {
     pub tool_calls: Option<Vec<ChatCompletionRequestMessageToolCall>>,
-    pub reasoning_content: Option<String>,
-    pub reasoning: Option<String>,
+    /// `None` is absent, `Some(None)` is an explicit `null`, so both round-trip.
+    #[serde(default, with = "serde_with::rust::double_option")]
+    #[schemars(with = "Option<Option<String>>")]
+    pub reasoning_content: Option<Option<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    #[schemars(with = "Option<Option<String>>")]
+    pub reasoning: Option<Option<String>>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
+}
+
+impl CommonChatCompletionMessage {
+    pub fn reasoning_content(&self) -> Option<&str> {
+        self.reasoning_content.as_ref().and_then(|r| r.as_deref())
+    }
+
+    pub fn reasoning(&self) -> Option<&str> {
+        self.reasoning.as_ref().and_then(|r| r.as_deref())
+    }
+
+    pub fn reasoning_content_or_default(&mut self) -> &mut String {
+        self.reasoning_content
+            .get_or_insert_default()
+            .get_or_insert_default()
+    }
+
+    pub fn reasoning_or_default(&mut self) -> &mut String {
+        self.reasoning
+            .get_or_insert_default()
+            .get_or_insert_default()
+    }
+
+    /// Takes the text, leaving an explicit `null` in place.
+    pub fn take_reasoning_content(&mut self) -> Option<String> {
+        take_text(&mut self.reasoning_content)
+    }
+
+    /// Takes the text, leaving an explicit `null` in place.
+    pub fn take_reasoning(&mut self) -> Option<String> {
+        take_text(&mut self.reasoning)
+    }
+}
+
+fn take_text(field: &mut Option<Option<String>>) -> Option<String> {
+    match field {
+        Some(Some(_)) => field.take().flatten(),
+        _ => None,
+    }
 }
 
 impl Add for CommonChatCompletionMessage {

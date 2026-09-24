@@ -87,9 +87,44 @@ impl ChatCompletionReasoningRemappingState {
             return;
         };
 
-        if let Some(partial) = state.partial.take() {
-            inner.content.get_or_insert_default().push_str(&partial);
+        let partial = state.partial.take();
+
+        if state.started && !state.stopped {
+            state.stopped = true;
+
+            match &self.to {
+                ChatCompletionReasoningPosition::Content { stop_tag, .. } => {
+                    let content = inner.content_or_default();
+                    if let Some(partial) = &partial {
+                        content.push_str(partial);
+                    }
+                    content.push_str(stop_tag);
+                }
+                ChatCompletionReasoningPosition::Reasoning => {
+                    if let Some(partial) = &partial {
+                        inner.common.reasoning_or_default().push_str(partial);
+                    }
+                }
+                ChatCompletionReasoningPosition::ReasoningContent => {
+                    if let Some(partial) = &partial {
+                        inner
+                            .common
+                            .reasoning_content_or_default()
+                            .push_str(partial);
+                    }
+                }
+            }
+        } else if let Some(partial) = partial {
+            inner.content_or_default().push_str(&partial);
         }
+    }
+
+    pub fn open_indices(&self) -> Vec<u32> {
+        self.choices
+            .iter()
+            .filter(|(_, state)| state.started && !state.stopped)
+            .map(|(index, _)| *index as u32)
+            .collect()
     }
 
     pub fn apply(&mut self, index: u32, inner: &mut ChatCompletionResponseMessage) {
@@ -109,7 +144,7 @@ impl ChatCompletionReasoningRemappingState {
                     start_tag,
                     stop_tag,
                 } => {
-                    let Some(content) = inner.content.as_mut() else {
+                    let Some(content) = inner.content_mut() else {
                         return;
                     };
 
@@ -152,12 +187,14 @@ impl ChatCompletionReasoningRemappingState {
                     }
                 }
                 ChatCompletionReasoningPosition::Reasoning => {
-                    reasoning_content_opt = inner.common.reasoning.take();
+                    reasoning_content_opt = inner.common.take_reasoning();
                     state.started = reasoning_content_opt.is_some();
+                    state.stopped = state.started && has_content(inner);
                 }
                 ChatCompletionReasoningPosition::ReasoningContent => {
-                    reasoning_content_opt = inner.common.reasoning_content.take();
+                    reasoning_content_opt = inner.common.take_reasoning_content();
                     state.started = reasoning_content_opt.is_some();
+                    state.stopped = state.started && has_content(inner);
                 }
             },
             // started, not stopped
@@ -166,7 +203,7 @@ impl ChatCompletionReasoningRemappingState {
                     start_tag: _,
                     stop_tag,
                 } => {
-                    let Some(content) = inner.content.as_mut() else {
+                    let Some(content) = inner.content_mut() else {
                         return;
                     };
 
@@ -193,12 +230,12 @@ impl ChatCompletionReasoningRemappingState {
                     }
                 }
                 ChatCompletionReasoningPosition::Reasoning => {
-                    reasoning_content_opt = inner.common.reasoning.take();
-                    state.stopped = reasoning_content_opt.is_none();
+                    reasoning_content_opt = inner.common.take_reasoning();
+                    state.stopped = reasoning_content_opt.is_none() || has_content(inner);
                 }
                 ChatCompletionReasoningPosition::ReasoningContent => {
-                    reasoning_content_opt = inner.common.reasoning_content.take();
-                    state.stopped = reasoning_content_opt.is_none();
+                    reasoning_content_opt = inner.common.take_reasoning_content();
+                    state.stopped = reasoning_content_opt.is_none() || has_content(inner);
                 }
             },
             // started, stopped
@@ -216,8 +253,6 @@ impl ChatCompletionReasoningRemappingState {
                 start_tag,
                 stop_tag,
             } => {
-                let content_opt = &mut inner.content;
-
                 if let Some(mut reasoning_content) = reasoning_content_opt {
                     if state.started && !was_started {
                         reasoning_content = format!("{start_tag}{reasoning_content}");
@@ -227,34 +262,39 @@ impl ChatCompletionReasoningRemappingState {
                         reasoning_content = format!("{reasoning_content}{stop_tag}")
                     }
 
-                    if let Some(content) = content_opt.as_mut() {
+                    if let Some(content) = inner.content_mut() {
                         let before = &content[..reasoning_offset];
                         let after = &content[reasoning_offset..];
 
                         *content = format!("{before}{reasoning_content}{after}");
                     } else {
-                        *content_opt = Some(reasoning_content)
+                        inner.content = Some(Some(reasoning_content));
                     }
                 } else if state.stopped && !was_stopped {
-                    if let Some(content) = content_opt {
+                    if let Some(content) = inner.content_mut() {
                         *content = format!("{stop_tag}{content}");
                     } else {
-                        *content_opt = Some(stop_tag.to_string());
+                        inner.content = Some(Some(stop_tag.to_string()));
                     }
                 }
             }
             ChatCompletionReasoningPosition::Reasoning => {
                 if reasoning_content_opt.is_some() {
-                    inner.common.reasoning = reasoning_content_opt;
+                    inner.common.reasoning = Some(reasoning_content_opt);
                 }
             }
             ChatCompletionReasoningPosition::ReasoningContent => {
                 if reasoning_content_opt.is_some() {
-                    inner.common.reasoning_content = reasoning_content_opt;
+                    inner.common.reasoning_content = Some(reasoning_content_opt);
                 }
             }
         }
     }
+}
+
+/// Content arriving alongside a reasoning field means the reasoning has ended.
+fn has_content(inner: &ChatCompletionResponseMessage) -> bool {
+    inner.content().is_some_and(|c| !c.is_empty())
 }
 
 #[cfg(test)]
@@ -272,7 +312,7 @@ mod tests {
 
         state.apply(0, &mut input);
 
-        assert_eq!(input.content.unwrap(), "--FOO123BARasdfg");
+        assert_eq!(input.content(), Some("--FOO123BARasdfg"));
     }
 
     #[test]
@@ -350,8 +390,8 @@ mod tests {
 
         state.apply(0, &mut input);
 
-        assert!(input.common.reasoning_content.is_none());
-        assert_eq!(input.common.reasoning.unwrap(), "extracted thought");
+        assert!(input.common.reasoning_content().is_none());
+        assert_eq!(input.common.reasoning(), Some("extracted thought"));
     }
 
     #[test]
@@ -388,7 +428,7 @@ mod tests {
         for index in [0, 10, 100, 1000] {
             let mut input = from_content("<t>ok</t>");
             state.apply(index, &mut input);
-            assert_eq!(input.common.reasoning_content.unwrap(), "ok");
+            assert_eq!(input.common.reasoning_content(), Some("ok"));
         }
     }
 
@@ -425,11 +465,11 @@ mod tests {
         let mut message = from_content("hello <thi");
 
         state.apply(0, &mut message);
-        assert_eq!(message.content.as_deref(), Some("hello "));
+        assert_eq!(message.content(), Some("hello "));
 
         state.flush(0, &mut message);
-        assert_eq!(message.content.as_deref(), Some("hello <thi"));
-        assert!(message.common.reasoning_content.is_none());
+        assert_eq!(message.content(), Some("hello <thi"));
+        assert!(message.common.reasoning_content().is_none());
     }
 
     mod helpers {
@@ -451,7 +491,7 @@ mod tests {
 
         pub fn from_content(content: impl Display) -> ChatCompletionResponseMessage {
             ChatCompletionResponseMessage {
-                content: Some(content.to_string()),
+                content: Some(Some(content.to_string())),
                 ..message()
             }
         }
@@ -479,12 +519,12 @@ mod tests {
 
         impl With for ChatCompletionResponseMessage {
             fn with_reasoning(mut self, reasoning: impl Display) -> Self {
-                self.common.reasoning = Some(reasoning.to_string());
+                self.common.reasoning = Some(Some(reasoning.to_string()));
                 self
             }
 
             fn with_reasoning_content(mut self, reasoning_content: impl Display) -> Self {
-                self.common.reasoning_content = Some(reasoning_content.to_string());
+                self.common.reasoning_content = Some(Some(reasoning_content.to_string()));
                 self
             }
         }

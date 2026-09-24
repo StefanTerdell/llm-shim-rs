@@ -37,7 +37,13 @@ async fn streaming_response_can_be_moved_to_another_task() {
         let mut contents = vec![];
         while let Some(event) = stream.next().await {
             if let StreamingChatCompletionEvent::Chunk { chunk } = event.unwrap() {
-                contents.push(chunk.choices.unwrap()[0].delta.content.clone().unwrap());
+                contents.push(
+                    chunk.choices.unwrap()[0]
+                        .delta
+                        .content()
+                        .unwrap()
+                        .to_string(),
+                );
             }
         }
         contents
@@ -61,10 +67,7 @@ async fn non_streaming_future_can_be_spawned() {
     .await
     .unwrap();
 
-    assert_eq!(
-        response.body.choices[0].message.content.as_deref(),
-        Some("hi")
-    );
+    assert_eq!(response.body.choices[0].message.content(), Some("hi"));
 }
 
 #[tokio::test]

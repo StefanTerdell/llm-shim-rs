@@ -49,7 +49,7 @@ async fn streams_chunks_then_done_with_usage_from_server() {
                 .choices
                 .as_ref()
                 .and_then(|c| c.first())
-                .and_then(|c| c.delta.content.clone()),
+                .and_then(|c| c.delta.content().map(str::to_string)),
             _ => None,
         })
         .collect();
@@ -152,7 +152,7 @@ async fn keeps_logprobs_and_usage_when_caller_requested_them() {
         .logprobs
         .as_ref()
         .unwrap();
-    assert_eq!(logprobs["content"].len(), 3);
+    assert_eq!(logprobs["content"].as_ref().unwrap().len(), 3);
     assert_eq!(chunks[1].usage.as_ref().unwrap().completion_tokens(), 3);
 }
 
@@ -251,7 +251,7 @@ mod non_streaming {
         choices.sort_by_key(|c| c.common.index);
         let contents: Vec<_> = choices
             .iter()
-            .map(|c| c.message.content.clone().unwrap())
+            .map(|c| c.message.content().unwrap().to_string())
             .collect();
         assert_eq!(contents, ["Hello", "World"]);
         assert_eq!(
@@ -374,10 +374,7 @@ mod non_streaming {
             .unwrap();
 
         assert_eq!(response.error.unwrap()["message"], json!("boom"));
-        assert_eq!(
-            response.body.choices[0].message.content.as_deref(),
-            Some("Hel")
-        );
+        assert_eq!(response.body.choices[0].message.content(), Some("Hel"));
         assert_eq!(
             response.stats.unwrap().error.as_deref(),
             Some(r#"{"message":"boom"}"#)
@@ -405,11 +402,8 @@ mod non_streaming {
             .unwrap();
 
         let message = &response.body.choices[0].message;
-        assert_eq!(message.content.as_deref(), Some("answer"));
-        assert_eq!(
-            message.common.reasoning_content.as_deref(),
-            Some("planning")
-        );
+        assert_eq!(message.content(), Some("answer"));
+        assert_eq!(message.common.reasoning_content(), Some("planning"));
     }
 }
 
@@ -580,10 +574,7 @@ mod real_non_streaming {
             response.body.additional_properties["system_fingerprint"],
             json!("fp")
         );
-        assert_eq!(
-            response.body.choices[0].message.content.as_deref(),
-            Some("hi")
-        );
+        assert_eq!(response.body.choices[0].message.content(), Some("hi"));
         assert_eq!(
             response.body.choices[0].common.additional_properties["finish_reason"],
             json!("stop")
@@ -696,11 +687,8 @@ mod real_non_streaming {
             .unwrap();
 
         let message = &response.body.choices[0].message;
-        assert_eq!(message.content.as_deref(), Some("answer"));
-        assert_eq!(
-            message.common.reasoning_content.as_deref(),
-            Some("planning")
-        );
+        assert_eq!(message.content(), Some("answer"));
+        assert_eq!(message.common.reasoning_content(), Some("planning"));
     }
 
     #[tokio::test]
@@ -717,8 +705,293 @@ mod real_non_streaming {
             .unwrap();
 
         assert_eq!(
-            response.body.choices[0].message.content.as_deref(),
+            response.body.choices[0].message.content(),
             Some("answer <thi")
+        );
+    }
+}
+
+mod live_regressions {
+    use super::*;
+    use llm_shim::apis::chat_completion::{
+        models::{
+            api::request::non_streaming::NonStreamingChatCompletionRequestBody,
+            lib::options::{
+                ChatCompletionOptions, reasoning_remapping::ChatCompletionReasoningPosition,
+            },
+        },
+        non_streaming::non_streaming_chat_completion,
+    };
+
+    fn non_streaming_request() -> NonStreamingChatCompletionRequestBody {
+        serde_json::from_value(json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap()
+    }
+
+    fn remap_reasoning_content_to_tags() -> ChatCompletionOptions<'static> {
+        ChatCompletionOptions::default().with_reasoning_remapping((
+            ChatCompletionReasoningPosition::ReasoningContent,
+            ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+        ))
+    }
+
+    /// OpenAI sends `"logprobs": {"content": [...], "refusal": null}`.
+    #[tokio::test]
+    async fn streaming_logprobs_with_null_members_parse_and_count() {
+        let server = MockSse::start(Script::sse([
+            data(json!({"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "logprobs": {"content": [], "refusal": null}}]})),
+            data(json!({"choices": [{"index": 0, "delta": {"content": "pong"}, "logprobs": {"content": [{"token": "pong", "logprob": -0.1}, {"token": "!", "logprob": -0.2}], "refusal": null}}]})),
+            data(json!({"choices": [{"index": 0, "delta": {}, "logprobs": null, "finish_reason": "stop"}]})),
+            done(),
+        ]))
+        .await;
+
+        let events = collect(&server, streaming_request(json!({"logprobs": true}))).await;
+        let stats = done_stats(&events);
+
+        assert_eq!(stats.output_tokens, 2);
+        assert!(!stats.output_tokens_is_estimate);
+        let forwarded = chunks(&events)
+            .iter()
+            .filter(|c| {
+                c.choices
+                    .as_ref()
+                    .is_some_and(|cs| cs.iter().any(|ch| ch.common.logprobs.is_some()))
+            })
+            .count();
+        assert_eq!(
+            forwarded, 2,
+            "logprobs objects are forwarded when requested"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_streaming_logprobs_with_null_members_parse() {
+        let server = MockSse::start(Script::json(json!({
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "logprobs": {"content": [{"token": "pong", "logprob": -0.1}], "refusal": null}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .await;
+
+        let response = non_streaming_chat_completion(&server.url, non_streaming_request(), None)
+            .await
+            .unwrap();
+
+        let body = serde_json::to_value(&response.body).unwrap();
+        assert_eq!(
+            body["choices"][0]["logprobs"],
+            json!({"content": [{"token": "pong", "logprob": -0.1}], "refusal": null})
+        );
+    }
+
+    /// llama.cpp returns `reasoning_content` and `content` side by side in one message.
+    #[tokio::test]
+    async fn non_streaming_reasoning_field_beside_content_becomes_closed_tags() {
+        let server = MockSse::start(Script::json(json!({
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": {"role": "assistant", "reasoning_content": "two plus two", "content": "4"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .await;
+
+        let response = non_streaming_chat_completion(
+            &server.url,
+            non_streaming_request(),
+            remap_reasoning_content_to_tags(),
+        )
+        .await
+        .unwrap();
+
+        let message = &response.body.choices[0].message;
+        assert_eq!(message.content(), Some("<think>two plus two</think>4"));
+        assert_eq!(message.common.reasoning_content(), None);
+    }
+
+    /// Cut off by max_tokens while still reasoning: the tag must still be closed.
+    #[tokio::test]
+    async fn non_streaming_reasoning_field_without_content_is_still_closed() {
+        let server = MockSse::start(Script::json(json!({
+            "object": "chat.completion",
+            "choices": [{"index": 0, "message": {"role": "assistant", "reasoning_content": "two plus", "content": null}, "finish_reason": "length"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        })))
+        .await;
+
+        let response = non_streaming_chat_completion(
+            &server.url,
+            non_streaming_request(),
+            remap_reasoning_content_to_tags(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            response.body.choices[0].message.content(),
+            Some("<think>two plus</think>")
+        );
+    }
+
+    /// Cut off while still reasoning in a stream: a final chunk closes the tag.
+    #[tokio::test]
+    async fn streaming_open_reasoning_is_closed_with_a_final_chunk_at_done() {
+        let server = MockSse::start(Script::sse([
+            data(json!({"id": "c1", "model": "m", "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": "two "}}]})),
+            data(json!({"id": "c1", "model": "m", "choices": [{"index": 0, "delta": {"reasoning_content": "plus"}, "finish_reason": "length"}]})),
+            done(),
+        ]))
+        .await;
+
+        let mut stream = llm_shim::apis::chat_completion::streaming::streaming_chat_completion(
+            &server.url,
+            streaming_request(json!({})),
+            remap_reasoning_content_to_tags(),
+        )
+        .await
+        .unwrap();
+
+        let mut chunks = vec![];
+        let mut saw_done = false;
+        while let Some(event) = stream.next().await {
+            match event.unwrap() {
+                StreamingChatCompletionEvent::Chunk { chunk } => {
+                    chunks.push(serde_json::to_value(chunk).unwrap())
+                }
+                StreamingChatCompletionEvent::Done { .. } => saw_done = true,
+                StreamingChatCompletionEvent::ChunkError { .. } => panic!("unexpected error"),
+            }
+        }
+
+        assert!(saw_done);
+        let content: String = chunks
+            .iter()
+            .filter_map(|c| c["choices"][0]["delta"]["content"].as_str())
+            .collect();
+        assert_eq!(content, "<think>two plus</think>");
+        let last = chunks.last().unwrap();
+        assert_eq!(
+            last["id"],
+            json!("c1"),
+            "closing chunk carries the stream's metadata"
+        );
+        assert_eq!(last["choices"][0]["index"], json!(0));
+        assert!(last["choices"][0]["finish_reason"].is_null());
+    }
+
+    /// A streaming chunk carrying both the last reasoning delta and the first content delta.
+    #[tokio::test]
+    async fn streaming_chunk_with_reasoning_and_content_closes_the_tag_between_them() {
+        let server = MockSse::start(Script::sse([
+            data(json!({"choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": "two "}}]})),
+            data(json!({"choices": [{"index": 0, "delta": {"reasoning_content": "plus two", "content": "4"}}]})),
+            data(json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})),
+            done(),
+        ]))
+        .await;
+
+        let mut stream = llm_shim::apis::chat_completion::streaming::streaming_chat_completion(
+            &server.url,
+            streaming_request(json!({})),
+            remap_reasoning_content_to_tags(),
+        )
+        .await
+        .unwrap();
+
+        let mut content = String::new();
+        while let Some(event) = stream.next().await {
+            if let StreamingChatCompletionEvent::Chunk { chunk } = event.unwrap() {
+                for choice in chunk.choices.unwrap_or_default() {
+                    content.push_str(choice.delta.content().unwrap_or(""));
+                    assert!(choice.delta.common.reasoning_content().is_none());
+                }
+            }
+        }
+
+        assert_eq!(content, "<think>two plus two</think>4");
+    }
+}
+
+mod explicit_nulls {
+    use super::*;
+    use llm_shim::apis::chat_completion::{
+        models::api::{
+            request::non_streaming::NonStreamingChatCompletionRequestBody,
+            response::streaming::StreamingChatCompletionChunk,
+        },
+        non_streaming::non_streaming_chat_completion,
+        virtual_non_streaming::virtual_non_streaming_chat_completion,
+    };
+    use serde_json::{Value, from_value, to_value};
+
+    fn non_streaming_request() -> NonStreamingChatCompletionRequestBody {
+        from_value(json!({
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hello"}],
+        }))
+        .unwrap()
+    }
+
+    /// vLLM sends `"reasoning": null`, OpenAI sends `"content": null` on tool-call-only replies.
+    #[tokio::test]
+    async fn null_and_absent_message_fields_round_trip_in_real_non_streaming() {
+        for message in [
+            json!({"role": "assistant", "content": null, "reasoning": null, "reasoning_content": null, "refusal": null}),
+            json!({"role": "assistant", "content": "hi"}),
+            json!({"role": "assistant", "content": null, "reasoning": "thought"}),
+        ] {
+            let server = MockSse::start(Script::json(json!({
+                "object": "chat.completion",
+                "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            })))
+            .await;
+
+            let response =
+                non_streaming_chat_completion(&server.url, non_streaming_request(), None)
+                    .await
+                    .unwrap();
+
+            let body = to_value(&response.body).unwrap();
+            assert_eq!(body["choices"][0]["message"], message);
+        }
+    }
+
+    #[test]
+    fn null_and_absent_delta_fields_round_trip_in_streaming_chunks() {
+        for chunk in [
+            json!({"id": "c", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "reasoning_content": null, "reasoning": null}}]}),
+            json!({"id": "c", "choices": [{"index": 0, "delta": {"role": "assistant"}}]}),
+            json!({"id": "c", "choices": [{"index": 0, "delta": {"content": "x", "reasoning": null}}]}),
+        ] {
+            let parsed: StreamingChatCompletionChunk = from_value(chunk.clone()).unwrap();
+            assert_eq!(to_value(parsed).unwrap(), chunk);
+        }
+    }
+
+    #[tokio::test]
+    async fn virtual_non_streaming_keeps_content_null_for_tool_call_only_replies() {
+        let server = MockSse::start(Script::sse([
+            data(json!({"choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": {"name": "f", "arguments": ""}}]}}]})),
+            data(json!({"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "function": {"arguments": "{}"}}]}}]})),
+            data(json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]})),
+            done(),
+        ]))
+        .await;
+
+        let response =
+            virtual_non_streaming_chat_completion(&server.url, non_streaming_request(), None)
+                .await
+                .unwrap();
+
+        let message = to_value(&response.body).unwrap()["choices"][0]["message"].clone();
+        assert_eq!(message["content"], Value::Null);
+        assert!(message.as_object().unwrap().contains_key("content"));
+        assert_eq!(
+            message["tool_calls"][0]["function"]["arguments"],
+            json!("{}")
         );
     }
 }

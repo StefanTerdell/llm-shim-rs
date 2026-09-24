@@ -33,6 +33,15 @@ impl<K: Eq + Hash, V: Merge<Option<V>>> Merge for IndexMap<K, V> {
     }
 }
 
+impl<T: Merge> Merge for Option<T> {
+    fn merge(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (Some(a), Some(b)) => Some(a.merge(b)),
+            (a, b) => a.or(b),
+        }
+    }
+}
+
 impl Merge for String {
     fn merge(self, rhs: Self) -> Self {
         format!("{self}{rhs}")

@@ -48,10 +48,7 @@ async fn json_split_across_two_frames_is_reassembled() {
     let StreamingChatCompletionEvent::Chunk { chunk } = first else {
         panic!("expected a chunk");
     };
-    assert_eq!(
-        chunk.choices.unwrap()[0].delta.content.as_deref(),
-        Some("hi")
-    );
+    assert_eq!(chunk.choices.unwrap()[0].delta.content(), Some("hi"));
     assert!(matches!(
         stream.next().await.unwrap().unwrap(),
         StreamingChatCompletionEvent::Done { .. }
