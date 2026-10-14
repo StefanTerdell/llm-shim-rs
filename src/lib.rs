@@ -3,6 +3,7 @@ mod derive_alias;
 extern crate derive_aliases;
 
 pub mod apis;
+pub mod convert;
 pub mod error;
 pub mod non_streaming_mode;
 pub mod prelude;
