@@ -116,6 +116,7 @@ pub struct MockSse {
     pub responses_url: String,
     pub embeddings_url: String,
     pub rerank_url: String,
+    pub systemone_url: String,
     pub transcriptions_url: String,
     requests: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
     _server: JoinHandle<()>,
@@ -135,6 +136,7 @@ impl MockSse {
             .route("/v1/responses", post(handler))
             .route("/v1/embeddings", post(handler))
             .route("/v1/rerank", post(handler))
+            .route("/v1/systemone", post(handler))
             .route("/v1/audio/transcriptions", post(handler))
             .with_state(state);
 
@@ -150,6 +152,7 @@ impl MockSse {
             responses_url: format!("http://{addr}/v1/responses"),
             embeddings_url: format!("http://{addr}/v1/embeddings"),
             rerank_url: format!("http://{addr}/v1/rerank"),
+            systemone_url: format!("http://{addr}/v1/systemone"),
             transcriptions_url: format!("http://{addr}/v1/audio/transcriptions"),
             requests,
             _server: server,

@@ -19,6 +19,7 @@ use crate::{
         common::{ContentPart, OutputItem, ReasoningPart},
         request::common::{CommonResponsesRequestBody, ResponsesInput},
     },
+    apis::systemone::models::api::request::SystemOneRequestBody,
 };
 
 pub trait EstimateTokens {
@@ -269,6 +270,18 @@ impl EstimateTokens for RerankRequestBody {
                 .iter()
                 .map(EstimateTokens::estimate_tokens)
                 .sum::<u32>()
+    }
+}
+
+impl EstimateTokens for SystemOneRequestBody {
+    /// Every question reads the state once, so the state is counted per question.
+    fn estimate_tokens(&self) -> u32 {
+        let state = self.state.estimate_tokens();
+
+        self.questions
+            .values()
+            .map(|question| state + question.to_string().estimate_tokens())
+            .sum()
     }
 }
 
