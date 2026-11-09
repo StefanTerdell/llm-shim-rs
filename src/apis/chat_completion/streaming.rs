@@ -38,11 +38,11 @@ pub async fn streaming_chat_completion<'a>(
 ) -> Result<StreamingChatCompletionResponse<'a>, Error> {
     let mut body = body.into();
 
-    let (client, bearer_token, max_tps, mut reasoning_remapping_state, output_token_counting) =
+    let (client, credentials, max_tps, mut reasoning_remapping_state, output_token_counting) =
         match options.into() {
             Some(options) => (
                 options.client.unwrap_or_default(),
-                options.bearer_token,
+                options.credentials,
                 options.max_tps,
                 options
                     .reasoning_remapping
@@ -82,9 +82,9 @@ pub async fn streaming_chat_completion<'a>(
 
     let mut request = client.post(url).json(&body);
 
-    if let Some(secret) = bearer_token {
-        request = request.bearer_auth(secret.expose())
-    };
+    if let Some(credentials) = credentials {
+        request = credentials.apply(request);
+    }
 
     let mut stats = StreamStats::new(Instant::now(), body.common.estimate_tokens());
     let mut pacer = TpsThrottler::new(max_tps, stats.requested);

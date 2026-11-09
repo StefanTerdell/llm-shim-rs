@@ -44,12 +44,8 @@ pub async fn streaming_messages<'a>(
             .unwrap_or_else(|| DEFAULT_ANTHROPIC_VERSION.to_string()),
     );
 
-    if let Some(api_key) = options.api_key {
-        request = request.header("x-api-key", api_key.expose());
-    }
-
-    if let Some(bearer_token) = options.bearer_token {
-        request = request.bearer_auth(bearer_token.expose());
+    if let Some(credentials) = options.credentials {
+        request = credentials.apply(request);
     }
 
     let mut stats = StreamStats::new(Instant::now(), body.common.estimate_tokens());

@@ -1,5 +1,7 @@
 mod support;
 
+use llm_shim::credentials::Credentials;
+
 use async_trait::async_trait;
 use llm_shim::{
     apis::embeddings::{
@@ -116,7 +118,7 @@ async fn sends_bearer_token_and_passes_extra_fields_through() {
     embeddings(
         &server.embeddings_url,
         body,
-        EmbeddingsOptions::default().with_bearer_token("tok"),
+        EmbeddingsOptions::default().with_credentials(Credentials::bearer("tok")),
     )
     .await
     .unwrap();

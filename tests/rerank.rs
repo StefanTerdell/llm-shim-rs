@@ -1,5 +1,7 @@
 mod support;
 
+use llm_shim::credentials::Credentials;
+
 use async_trait::async_trait;
 use llm_shim::{
     apis::rerank::{
@@ -47,7 +49,7 @@ async fn parses_results_and_reports_tokens_from_usage() {
     let result = rerank(
         &server.rerank_url,
         request(json!({"top_n": 2, "return_documents": true})),
-        RerankOptions::default().with_bearer_token("jina-key"),
+        RerankOptions::default().with_credentials(Credentials::bearer("jina-key")),
     )
     .await
     .unwrap();

@@ -1,6 +1,8 @@
 use reqwest::Client;
-use std::{fmt::Display, time::Duration};
-use stefans_utils::{prelude::AsClone, secret::Secret};
+use std::time::Duration;
+use stefans_utils::prelude::AsClone;
+
+use crate::credentials::Credentials;
 pub mod reasoning_remapping;
 
 use crate::{
@@ -11,8 +13,7 @@ use crate::{
 
 pub struct MessagesOptions<'a> {
     pub client: Option<Client>,
-    pub api_key: Option<Secret<String>>,
-    pub bearer_token: Option<Secret<String>>,
+    pub credentials: Option<Credentials>,
     pub anthropic_version: Option<String>,
     pub max_tps: Option<&'a dyn MaxTps>,
     pub max_tps_sample_interval: Option<Duration>,
@@ -24,8 +25,7 @@ impl Default for MessagesOptions<'_> {
     fn default() -> Self {
         Self {
             client: None,
-            api_key: None,
-            bearer_token: None,
+            credentials: None,
             anthropic_version: None,
             max_tps: None,
             max_tps_sample_interval: Some(DEFAULT_MAX_TPS_SAMPLE_INTERVAL),
@@ -46,23 +46,13 @@ impl MessagesOptions<'_> {
         self
     }
 
-    pub fn with_api_key<T: Display>(mut self, api_key: impl Into<Secret<T>>) -> Self {
-        self.api_key = Some(api_key.into().expose_to_string().into());
+    pub fn with_credentials(mut self, credentials: impl Into<Credentials>) -> Self {
+        self.credentials = Some(credentials.into());
         self
     }
 
-    pub fn without_api_key(mut self) -> Self {
-        self.api_key = None;
-        self
-    }
-
-    pub fn with_bearer_token<T: Display>(mut self, bearer_token: impl Into<Secret<T>>) -> Self {
-        self.bearer_token = Some(bearer_token.into().expose_to_string().into());
-        self
-    }
-
-    pub fn without_bearer_token(mut self) -> Self {
-        self.bearer_token = None;
+    pub fn without_credentials(mut self) -> Self {
+        self.credentials = None;
         self
     }
 

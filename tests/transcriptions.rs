@@ -1,5 +1,7 @@
 mod support;
 
+use llm_shim::credentials::Credentials;
+
 use async_trait::async_trait;
 use llm_shim::{
     apis::transcriptions::{
@@ -79,7 +81,7 @@ async fn sends_the_file_and_fields_as_multipart_and_parses_json() {
     let response = non_streaming_transcriptions(
         &server.transcriptions_url,
         request(json!({"language": "en", "temperature": 0, "timestamp_granularities": ["word", "segment"], "chunking_strategy": {"type": "server_vad"}})),
-        TranscriptionsOptions::default().with_bearer_token("tok"),
+        TranscriptionsOptions::default().with_credentials(Credentials::bearer("tok")),
     )
     .await
     .unwrap();

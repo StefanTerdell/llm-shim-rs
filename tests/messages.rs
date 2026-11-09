@@ -1,5 +1,7 @@
 mod support;
 
+use llm_shim::credentials::Credentials;
+
 use async_trait::async_trait;
 use llm_shim::traits::max_tps::MaxTps;
 use llm_shim::{
@@ -128,7 +130,7 @@ async fn estimates_output_tokens_until_message_delta_arrives() {
 async fn sends_api_key_and_version_headers_and_forces_stream() {
     let server = MockSse::start(simple_text_script(&["x"], 1, 1)).await;
 
-    let options = MessagesOptions::default().with_api_key("sk-test");
+    let options = MessagesOptions::default().with_credentials(Credentials::x_api_key("sk-test"));
     collect_with(&server, request(json!({})), options).await;
 
     let headers = server.single_request_headers();
@@ -142,7 +144,7 @@ async fn bearer_token_and_custom_version_are_honoured() {
     let server = MockSse::start(simple_text_script(&["x"], 1, 1)).await;
 
     let options = MessagesOptions::default()
-        .with_bearer_token("tok")
+        .with_credentials(Credentials::bearer("tok"))
         .with_anthropic_version("2024-01-01");
     collect_with(&server, request(json!({})), options).await;
 
@@ -543,7 +545,7 @@ mod real_non_streaming {
         .await;
 
         let options = MessagesOptions::default()
-            .with_api_key("sk-test")
+            .with_credentials(Credentials::x_api_key("sk-test"))
             .with_anthropic_version("2024-01-01");
 
         let response =

@@ -29,8 +29,8 @@ pub async fn streaming_transcriptions<'a>(
 
     let mut builder = client.post(url).multipart(request.into_form(Some(true))?);
 
-    if let Some(bearer_token) = options.bearer_token {
-        builder = builder.bearer_auth(bearer_token.expose());
+    if let Some(credentials) = options.credentials {
+        builder = credentials.apply(builder);
     }
 
     let mut stats = StreamStats::new(Instant::now(), 0);

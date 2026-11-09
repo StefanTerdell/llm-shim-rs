@@ -1,4 +1,5 @@
 pub use crate::{
+    credentials::Credentials,
     error::Error,
     non_streaming_mode::NonStreamingMode,
     stats::{ChunkStats, StreamStats},

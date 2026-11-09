@@ -1,5 +1,7 @@
 mod support;
 
+use llm_shim::credentials::Credentials;
+
 use async_trait::async_trait;
 use llm_shim::traits::max_tps::MaxTps;
 use llm_shim::{
@@ -133,7 +135,7 @@ async fn sends_bearer_token() {
     collect_with(
         &server,
         request(json!({})),
-        ResponsesOptions::default().with_bearer_token("tok"),
+        ResponsesOptions::default().with_credentials(Credentials::bearer("tok")),
     )
     .await;
 
@@ -540,7 +542,7 @@ mod real_non_streaming {
         let response = non_streaming_responses(
             &server.responses_url,
             non_streaming_request(),
-            ResponsesOptions::default().with_bearer_token("tok"),
+            ResponsesOptions::default().with_credentials(Credentials::bearer("tok")),
         )
         .await
         .unwrap();

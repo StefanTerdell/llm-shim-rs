@@ -1,5 +1,7 @@
 mod support;
 
+use llm_shim::credentials::Credentials;
+
 use async_trait::async_trait;
 use llm_shim::{
     apis::systemone::{
@@ -83,7 +85,7 @@ async fn parses_answers_and_reports_tokens_from_usage() {
     let result = systemone(
         &server.systemone_url,
         request(json!({"model": "english"})),
-        SystemOneOptions::default().with_bearer_token("lsk_live_x"),
+        SystemOneOptions::default().with_credentials(Credentials::bearer("lsk_live_x")),
     )
     .await
     .unwrap();

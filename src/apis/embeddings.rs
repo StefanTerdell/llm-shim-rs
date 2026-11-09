@@ -28,8 +28,8 @@ pub async fn embeddings<'a>(
 
     let mut request = client.post(url).json(&body);
 
-    if let Some(bearer_token) = options.bearer_token {
-        request = request.bearer_auth(bearer_token.expose());
+    if let Some(credentials) = options.credentials {
+        request = credentials.apply(request);
     }
 
     let input_tokens_estimate = body.estimate_tokens();
