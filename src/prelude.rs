@@ -38,6 +38,12 @@ pub use crate::apis::chat_completion::models::lib::streaming::response::Streamin
 pub use crate::apis::chat_completion::non_streaming::non_streaming_chat_completion;
 pub use crate::apis::chat_completion::streaming::streaming_chat_completion;
 pub use crate::apis::chat_completion::virtual_non_streaming::virtual_non_streaming_chat_completion;
+pub use crate::apis::decisions::decisions;
+pub use crate::apis::decisions::models::api::request::DecisionsRequestBody;
+pub use crate::apis::decisions::models::api::response::DecisionsResponse;
+pub use crate::apis::decisions::models::api::response::DecisionsResponseBody;
+pub use crate::apis::decisions::models::api::response::DecisionsUsage;
+pub use crate::apis::decisions::models::lib::options::DecisionsOptions;
 pub use crate::apis::embeddings::embeddings;
 pub use crate::apis::embeddings::models::api::request::EmbeddingsInput;
 pub use crate::apis::embeddings::models::api::request::EmbeddingsRequestBody;

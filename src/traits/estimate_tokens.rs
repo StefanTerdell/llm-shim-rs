@@ -9,6 +9,7 @@ use crate::{
         },
         response::common::ChatCompletionResponseMessage,
     },
+    apis::decisions::models::api::request::DecisionsRequestBody,
     apis::embeddings::models::api::request::{EmbeddingsInput, EmbeddingsRequestBody},
     apis::messages::models::api::{
         common::{ContentBlock, ContentBlockDelta},
@@ -281,6 +282,18 @@ impl EstimateTokens for SystemOneRequestBody {
         self.questions
             .values()
             .map(|question| state + question.to_string().estimate_tokens())
+            .sum()
+    }
+}
+
+impl EstimateTokens for DecisionsRequestBody {
+    /// Every question reads the shared input once, so the input is counted per question.
+    fn estimate_tokens(&self) -> u32 {
+        let input = self.input.estimate_tokens();
+
+        self.questions
+            .iter()
+            .map(|question| input + question.to_string().estimate_tokens())
             .sum()
     }
 }
