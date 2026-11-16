@@ -112,7 +112,8 @@ async fn parses_answers_and_reports_tokens_from_usage() {
     .await
     .unwrap();
 
-    let answers = &result.body.additional_properties["answers"];
+    let body = serde_json::to_value(&result.body).unwrap();
+    let answers = &body["answers"];
     assert_eq!(answers[0]["choice"], json!("refund"));
     assert_eq!(answers[1]["probability"], json!(0.81));
     assert_eq!(answers[2]["probabilities"][3]["label"], json!("very angry"));
@@ -124,7 +125,7 @@ async fn parses_answers_and_reports_tokens_from_usage() {
     let usage = result.body.usage.as_ref().unwrap();
     assert_eq!(usage.input_tokens, Some(212));
     assert_eq!(usage.output_tokens, Some(0));
-    assert_eq!(usage.additional_properties["total_tokens"], json!(212));
+    assert_eq!(usage.total_tokens, Some(212));
     assert_eq!(
         usage.additional_properties["input_tokens_details"]["cached_tokens"],
         json!(0)
@@ -203,7 +204,8 @@ async fn refusal_answers_pass_through() {
         .await
         .unwrap();
 
-    let answers = &result.body.additional_properties["answers"];
+    let body = serde_json::to_value(&result.body).unwrap();
+    let answers = &body["answers"];
     assert_eq!(answers[0]["type"], json!("refusal"));
     assert!(answers[0]["name"].is_null());
     assert_eq!(result.stats.input_tokens, 9);

@@ -90,7 +90,8 @@ async fn parses_answers_and_reports_tokens_from_usage() {
     .await
     .unwrap();
 
-    let answers = &result.body.additional_properties["answers"];
+    let body = serde_json::to_value(&result.body).unwrap();
+    let answers = &body["answers"];
     assert_eq!(answers["intent"]["choice"], json!("refund"));
     assert_eq!(answers["urgent"]["noul"], json!(0.81));
     assert_eq!(answers["frustration"]["legend"]["3"], json!("very angry"));

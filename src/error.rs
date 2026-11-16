@@ -20,6 +20,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("upstream responded with {status}")]
     UpstreamStatus { status: StatusCode, body: String },
+    #[error("{0}")]
+    Translation(String),
 }
 
 pub(crate) async fn send_checked(request: RequestBuilder) -> Result<Response, Error> {

@@ -281,7 +281,12 @@ impl EstimateTokens for SystemOneRequestBody {
 
         self.questions
             .values()
-            .map(|question| state + question.to_string().estimate_tokens())
+            .map(|question| {
+                state
+                    + serde_json::to_string(question)
+                        .map(|question| question.estimate_tokens())
+                        .unwrap_or_default()
+            })
             .sum()
     }
 }
@@ -293,7 +298,12 @@ impl EstimateTokens for DecisionsRequestBody {
 
         self.questions
             .iter()
-            .map(|question| input + question.to_string().estimate_tokens())
+            .map(|question| {
+                input
+                    + serde_json::to_string(question)
+                        .map(|question| question.estimate_tokens())
+                        .unwrap_or_default()
+            })
             .sum()
     }
 }
