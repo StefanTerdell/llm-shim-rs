@@ -222,8 +222,9 @@ async fn non_2xx_surfaces_status_and_body() {
     .await;
 
     match streaming_messages(&server.messages_url, request(json!({})), None).await {
-        Err(Error::Reqwest(error)) => {
-            assert_eq!(error.status(), Some(reqwest::StatusCode::UNAUTHORIZED));
+        Err(Error::UpstreamStatus { status, body }) => {
+            assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+            assert!(body.contains("invalid x-api-key"));
         }
         Err(other) => panic!("unexpected error: {other}"),
         Ok(_) => panic!("expected an error"),

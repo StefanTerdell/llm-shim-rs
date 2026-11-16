@@ -9,7 +9,7 @@ use crate::{
         },
         lib::options::TranscriptionsOptions,
     },
-    error::Error,
+    error::{Error, send_checked},
     stats::StreamStats,
     tps_throttler::pace_once,
     traits::estimate_tokens::EstimateTokens,
@@ -38,7 +38,7 @@ pub async fn non_streaming_transcriptions<'a>(
         options.max_tps,
         options.max_tps_sample_interval,
         async {
-            let response = builder.send().await?.error_for_status()?;
+            let response = send_checked(builder).await?;
             let is_json = response
                 .headers()
                 .get(CONTENT_TYPE)

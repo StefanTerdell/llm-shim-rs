@@ -4,6 +4,8 @@ pub use reqwest::StatusCode;
 pub use serde_json::Error as SerdeJsonError;
 pub use url::ParseError as UrlParseError;
 
+use reqwest::{RequestBuilder, Response};
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -16,4 +18,19 @@ pub enum Error {
     UrlParse(#[from] UrlParseError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("upstream responded with {status}")]
+    UpstreamStatus { status: StatusCode, body: String },
+}
+
+pub(crate) async fn send_checked(request: RequestBuilder) -> Result<Response, Error> {
+    let response = request.send().await?;
+    let status = response.status();
+
+    if status.is_success() {
+        return Ok(response);
+    }
+
+    let body = response.text().await.unwrap_or_default();
+
+    Err(Error::UpstreamStatus { status, body })
 }

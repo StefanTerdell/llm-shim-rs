@@ -662,8 +662,9 @@ mod real_non_streaming {
         let result = non_streaming_chat_completion(&server.url, request(), None).await;
 
         match result {
-            Err(llm_shim::error::Error::Reqwest(e)) => {
-                assert_eq!(e.status(), Some(reqwest::StatusCode::UNAUTHORIZED))
+            Err(llm_shim::error::Error::UpstreamStatus { status, body }) => {
+                assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+                assert!(body.contains("no"));
             }
             other => panic!("unexpected: {:?}", other.map(|_| ())),
         }

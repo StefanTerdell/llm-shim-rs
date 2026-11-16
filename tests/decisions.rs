@@ -218,8 +218,9 @@ async fn bad_request_surfaces_400() {
     .await;
 
     match decisions(&server.decisions_url, request(json!({})), None).await {
-        Err(Error::Reqwest(error)) => {
-            assert_eq!(error.status(), Some(StatusCode::BAD_REQUEST))
+        Err(Error::UpstreamStatus { status, body }) => {
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(body.contains("choices must be unique"));
         }
         Err(other) => panic!("unexpected error variant: {other}"),
         Ok(_) => panic!("expected an error"),

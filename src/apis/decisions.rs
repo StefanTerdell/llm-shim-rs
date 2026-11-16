@@ -6,7 +6,7 @@ use crate::{
         },
         lib::options::DecisionsOptions,
     },
-    error::Error,
+    error::{Error, send_checked},
     stats::StreamStats,
     tps_throttler::pace_once,
     traits::estimate_tokens::EstimateTokens,
@@ -43,10 +43,8 @@ pub async fn decisions<'a>(
         options.max_tps_sample_interval,
         async {
             Ok::<_, Error>(
-                request
-                    .send()
+                send_checked(request)
                     .await?
-                    .error_for_status()?
                     .json::<DecisionsResponseBody>()
                     .await?,
             )

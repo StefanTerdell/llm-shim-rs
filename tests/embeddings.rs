@@ -205,7 +205,10 @@ async fn non_2xx_is_an_error() {
     .await;
 
     match embeddings(&server.embeddings_url, request(json!("x")), None).await {
-        Err(Error::Reqwest(e)) => assert_eq!(e.status(), Some(StatusCode::UNAUTHORIZED)),
+        Err(Error::UpstreamStatus { status, body }) => {
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert!(body.contains("bad key"));
+        }
         Err(other) => panic!("unexpected error: {other}"),
         Ok(_) => panic!("expected an error"),
     }

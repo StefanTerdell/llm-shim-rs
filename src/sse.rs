@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::{Error, send_checked};
 use eventsource_stream::Eventsource;
 use reqwest::RequestBuilder;
 use serde::de::DeserializeOwned;
@@ -10,10 +10,8 @@ pub(crate) use eventsource_stream::Event;
 pub(crate) async fn send(
     request: RequestBuilder,
 ) -> Result<impl Stream<Item = Result<Event, Error>> + Send + 'static, Error> {
-    Ok(request
-        .send()
+    Ok(send_checked(request)
         .await?
-        .error_for_status()?
         .bytes_stream()
         .eventsource()
         .map(|result| result.map_err(Error::from)))

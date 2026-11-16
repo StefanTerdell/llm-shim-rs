@@ -6,7 +6,7 @@ use crate::{
         },
         lib::options::{ResponsesOptions, reasoning_remapping::body::remap_output},
     },
-    error::Error,
+    error::{Error, send_checked},
     stats::StreamStats,
     tps_throttler::pace_once,
     traits::estimate_tokens::EstimateTokens,
@@ -35,16 +35,7 @@ pub async fn non_streaming_responses<'a>(
     let (mut body, chunk) = pace_once(
         options.max_tps,
         options.max_tps_sample_interval,
-        async {
-            Ok::<_, Error>(
-                request
-                    .send()
-                    .await?
-                    .error_for_status()?
-                    .json::<ResponseBody>()
-                    .await?,
-            )
-        },
+        async { Ok::<_, Error>(send_checked(request).await?.json::<ResponseBody>().await?) },
         output_tokens,
     )
     .await?;

@@ -165,8 +165,9 @@ async fn malformed_question_surfaces_422() {
     .await;
 
     match systemone(&server.systemone_url, request(json!({})), None).await {
-        Err(Error::Reqwest(error)) => {
-            assert_eq!(error.status(), Some(StatusCode::UNPROCESSABLE_ENTITY))
+        Err(Error::UpstreamStatus { status, body }) => {
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert!(body.contains("a score needs a list"));
         }
         Err(other) => panic!("unexpected error variant: {other}"),
         Ok(_) => panic!("expected an error"),
