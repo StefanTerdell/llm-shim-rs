@@ -9,6 +9,7 @@ use crate::{
         },
         response::common::ChatCompletionResponseMessage,
     },
+    apis::completions::models::api::request::{CommonCompletionRequestBody, CompletionPrompt},
     apis::decisions::models::api::request::DecisionsRequestBody,
     apis::embeddings::models::api::request::{EmbeddingsInput, EmbeddingsRequestBody},
     apis::messages::models::api::{
@@ -317,6 +318,17 @@ impl EstimateTokens for Value {
                 None => self.to_string().estimate_tokens(),
             },
             other => other.to_string().estimate_tokens(),
+        }
+    }
+}
+
+impl EstimateTokens for CommonCompletionRequestBody {
+    fn estimate_tokens(&self) -> u32 {
+        match &self.prompt {
+            CompletionPrompt::Text(text) => text.estimate_tokens(),
+            CompletionPrompt::Texts(texts) => texts.iter().map(|t| t.estimate_tokens()).sum(),
+            CompletionPrompt::Tokens(tokens) => tokens.len() as u32,
+            CompletionPrompt::TokenBatches(batches) => batches.iter().map(|b| b.len() as u32).sum(),
         }
     }
 }

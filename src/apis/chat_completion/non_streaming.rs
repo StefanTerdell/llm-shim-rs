@@ -56,6 +56,7 @@ pub async fn non_streaming_chat_completion<'a>(
         Some(usage) => {
             stats.input_tokens_is_estimate = false;
             stats.input_tokens = usage.prompt_tokens();
+            stats.cached_input_tokens = usage.cached_tokens();
             stats.output_tokens_is_estimate = false;
             stats.output_tokens = usage.completion_tokens();
         }

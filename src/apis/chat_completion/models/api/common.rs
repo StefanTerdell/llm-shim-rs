@@ -124,20 +124,30 @@ pub struct ChatCompletionRequestMessageFunctionToolCall {
 impl Merge for ChatCompletionRequestMessageFunctionToolCall {
     fn merge(self, rhs: Self) -> Self {
         Self {
-            name: self.name.or_merge(rhs.name),
+            name: rhs.name.or(self.name),
             arguments: self.arguments.or_merge(rhs.arguments),
             additional_properties: self.additional_properties.merge(rhs.additional_properties),
         }
     }
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(..ApiModel, Default)]
 pub struct ChatCompletionUsage {
     completion_tokens: u32,
     prompt_tokens: u32,
     total_tokens: u32,
+    prompt_tokens_details: Option<ChatCompletionPromptTokensDetails>,
     #[serde(flatten)]
     additional_properties: IndexMap<String, Value>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(..ApiModel, Default)]
+pub struct ChatCompletionPromptTokensDetails {
+    pub cached_tokens: Option<u32>,
+    #[serde(flatten)]
+    pub additional_properties: IndexMap<String, Value>,
 }
 
 impl From<&StreamStats> for ChatCompletionUsage {
@@ -146,6 +156,12 @@ impl From<&StreamStats> for ChatCompletionUsage {
             completion_tokens: value.output_tokens,
             prompt_tokens: value.input_tokens,
             total_tokens: value.input_tokens + value.output_tokens,
+            prompt_tokens_details: (value.cached_input_tokens > 0).then(|| {
+                ChatCompletionPromptTokensDetails {
+                    cached_tokens: Some(value.cached_input_tokens),
+                    additional_properties: Default::default(),
+                }
+            }),
             additional_properties: Default::default(),
         }
     }
@@ -174,5 +190,12 @@ impl ChatCompletionUsage {
 
     pub fn total_tokens(&self) -> u32 {
         self.total_tokens
+    }
+
+    pub fn cached_tokens(&self) -> u32 {
+        self.prompt_tokens_details
+            .as_ref()
+            .and_then(|details| details.cached_tokens)
+            .unwrap_or_default()
     }
 }

@@ -7,6 +7,23 @@ pub struct ResponsesUsage {
     pub input_tokens: Option<u32>,
     pub output_tokens: Option<u32>,
     pub total_tokens: Option<u32>,
+    pub input_tokens_details: Option<ResponsesInputTokensDetails>,
+    #[serde(flatten)]
+    pub additional_properties: IndexMap<String, Value>,
+}
+
+impl ResponsesUsage {
+    pub fn cached_tokens(&self) -> Option<u32> {
+        self.input_tokens_details
+            .as_ref()
+            .and_then(|details| details.cached_tokens)
+    }
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(..ApiModel, Default)]
+pub struct ResponsesInputTokensDetails {
+    pub cached_tokens: Option<u32>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }

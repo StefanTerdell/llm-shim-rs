@@ -70,6 +70,10 @@ pub async fn streaming_responses<'a>(
                             stats.input_tokens = input_tokens;
                         }
 
+                        if let Some(cached_tokens) = usage.cached_tokens() {
+                            stats.cached_input_tokens = cached_tokens;
+                        }
+
                         if let Some(output_tokens) = usage.output_tokens {
                             stats.output_tokens_is_estimate = false;
                             stats.output_tokens = output_tokens;

@@ -221,6 +221,23 @@ async fn unknown_events_and_data_only_frames_and_done_sentinel_are_tolerated() {
     assert_eq!(done_stats(&events).output_tokens, 1);
 }
 
+#[tokio::test]
+async fn cached_input_tokens_reach_the_stats() {
+    let mut finished = completed(json!([message_item("msg_1", "hi", "completed")]), 9, 1);
+    finished["response"]["usage"]["input_tokens_details"] = json!({"cached_tokens": 6});
+    let server = MockSse::start(Script::sse([
+        data(created()),
+        data(item_added(0, message_item("msg_1", "", "in_progress"))),
+        data(text_delta("msg_1", 0, "hi")),
+        data(finished),
+    ]))
+    .await;
+
+    let events = collect(&server, request(json!({}))).await;
+
+    assert_eq!(done_stats(&events).cached_input_tokens, 6);
+}
+
 mod non_streaming {
     use super::*;
 

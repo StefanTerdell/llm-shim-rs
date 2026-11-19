@@ -103,7 +103,7 @@ pub async fn streaming_chat_completion<'a>(
                 }
 
                 yield StreamingChatCompletionEvent::Done { stats };
-                break;
+                return;
             }
 
             let Some(mut chunk) = frames.push::<StreamingChatCompletionChunk>(data)? else {
@@ -111,6 +111,14 @@ pub async fn streaming_chat_completion<'a>(
             };
 
             last_metadata = chunk.additional_properties.clone();
+
+            if chunk.usage.is_some()
+                && chunk.choices.as_ref().is_none_or(Vec::is_empty)
+                && let Some(state) = &mut reasoning_remapping_state
+                && let Some(closing) = closing_chunk(state, last_metadata.clone())
+            {
+                yield StreamingChatCompletionEvent::Chunk { chunk: closing };
+            }
 
             if let Some(choices) = &mut chunk.choices {
                 let mut chunk_tokens = 0;
@@ -145,6 +153,7 @@ pub async fn streaming_chat_completion<'a>(
             if let Some(usage) = chunk.usage.take() {
                 stats.input_tokens_is_estimate = false;
                 stats.input_tokens = usage.prompt_tokens();
+                stats.cached_input_tokens = usage.cached_tokens();
                 stats.output_tokens_is_estimate = false;
                 stats.output_tokens = usage.completion_tokens();
 
@@ -156,11 +165,13 @@ pub async fn streaming_chat_completion<'a>(
             if let Some(error) = chunk.error.as_ref().map(|e| e.to_string()).filter(|e| !e.is_empty()) {
                 stats.error = Some(error);
                 yield StreamingChatCompletionEvent::ChunkError { chunk, stats };
-                break;
+                return;
             }
 
             yield StreamingChatCompletionEvent::Chunk { chunk };
         }
+
+        yield StreamingChatCompletionEvent::Done { stats };
     }))
 }
 

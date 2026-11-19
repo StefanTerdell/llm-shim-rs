@@ -112,6 +112,7 @@ struct AppState {
 
 pub struct MockSse {
     pub url: String,
+    pub completions_url: String,
     pub messages_url: String,
     pub responses_url: String,
     pub embeddings_url: String,
@@ -133,6 +134,7 @@ impl MockSse {
 
         let app = Router::new()
             .route("/v1/chat/completions", post(handler))
+            .route("/v1/completions", post(handler))
             .route("/v1/messages", post(handler))
             .route("/v1/responses", post(handler))
             .route("/v1/embeddings", post(handler))
@@ -150,6 +152,7 @@ impl MockSse {
 
         Self {
             url: format!("http://{addr}/v1/chat/completions"),
+            completions_url: format!("http://{addr}/v1/completions"),
             messages_url: format!("http://{addr}/v1/messages"),
             responses_url: format!("http://{addr}/v1/responses"),
             embeddings_url: format!("http://{addr}/v1/embeddings"),

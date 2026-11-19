@@ -996,3 +996,160 @@ mod explicit_nulls {
         );
     }
 }
+
+#[tokio::test]
+async fn cached_prompt_tokens_reach_the_stats() {
+    let server = MockSse::start(Script::sse([
+        data(delta(0, "hi")),
+        data(json!({"choices": [], "usage": {"prompt_tokens": 9, "completion_tokens": 1, "total_tokens": 10, "prompt_tokens_details": {"cached_tokens": 6}}})),
+        done(),
+    ]))
+    .await;
+
+    let events = collect(&server, streaming_request(json!({}))).await;
+
+    let StreamingChatCompletionEvent::Done { stats } = events.last().unwrap() else {
+        panic!("last event should be Done");
+    };
+    assert_eq!(stats.cached_input_tokens, 6);
+}
+
+#[tokio::test]
+async fn virtual_non_streaming_keeps_the_stream_metadata_and_cached_tokens() {
+    use llm_shim::prelude::{
+        NonStreamingChatCompletionRequestBody, virtual_non_streaming_chat_completion,
+    };
+
+    let chunk = |content: &str| json!({"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 5, "model": "served", "system_fingerprint": "fp", "choices": [{"index": 0, "delta": {"role": "assistant", "content": content}}]});
+    let server = MockSse::start(Script::sse([
+        data(chunk("Hel")),
+        data(chunk("lo")),
+        data(json!({"choices": [], "usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11, "prompt_tokens_details": {"cached_tokens": 6}}})),
+        done(),
+    ]))
+    .await;
+
+    let request: NonStreamingChatCompletionRequestBody = serde_json::from_value(json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "hello"}],
+    }))
+    .unwrap();
+    let response = virtual_non_streaming_chat_completion(&server.url, request, None)
+        .await
+        .unwrap();
+
+    let body = serde_json::to_value(&response.body).unwrap();
+    assert_eq!(body["id"], json!("chatcmpl-1"));
+    assert_eq!(body["created"], json!(5));
+    assert_eq!(body["system_fingerprint"], json!("fp"));
+    assert_eq!(body["object"], json!("chat.completion"));
+    assert_eq!(body["model"], json!("test-model"));
+    assert_eq!(body["choices"][0]["message"]["content"], json!("Hello"));
+    assert_eq!(
+        body["usage"]["prompt_tokens_details"]["cached_tokens"],
+        json!(6)
+    );
+}
+
+#[tokio::test]
+async fn open_reasoning_is_closed_before_the_usage_chunk() {
+    use llm_shim::prelude::{ChatCompletionOptions, ChatCompletionReasoningPosition};
+
+    let server = MockSse::start(Script::sse([
+        data(json!({"choices": [{"index": 0, "delta": {"reasoning": "thinking"}}]})),
+        data(json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "length"}]})),
+        data(usage(3, 1)),
+        done(),
+    ]))
+    .await;
+
+    let options = ChatCompletionOptions::default().with_reasoning_remapping((
+        ChatCompletionReasoningPosition::Reasoning,
+        ChatCompletionReasoningPosition::content_unchecked("<think>", "</think>"),
+    ));
+    let mut stream = streaming_chat_completion(
+        &server.url,
+        streaming_request(json!({"stream_options": {"include_usage": true}})),
+        options,
+    )
+    .await
+    .unwrap();
+    let mut events = vec![];
+    while let Some(event) = stream.next().await {
+        events.push(event.unwrap());
+    }
+
+    let chunks: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            StreamingChatCompletionEvent::Chunk { chunk } => Some(chunk),
+            _ => None,
+        })
+        .collect();
+    let usage_at = chunks
+        .iter()
+        .position(|chunk| chunk.usage.is_some())
+        .unwrap();
+    assert_eq!(usage_at, chunks.len() - 1, "usage must come last");
+    let content: String = chunks
+        .iter()
+        .flat_map(|chunk| chunk.choices.iter().flatten())
+        .filter_map(|choice| choice.delta.content())
+        .collect();
+    assert_eq!(content, "<think>thinking</think>");
+}
+
+#[tokio::test]
+async fn virtual_non_streaming_orders_choices_and_keeps_one_tool_name() {
+    use llm_shim::prelude::{
+        NonStreamingChatCompletionRequestBody, virtual_non_streaming_chat_completion,
+    };
+
+    let call = |index: u32, args: &str| json!({"choices": [{"index": index, "delta": {"tool_calls": [{"index": 0, "function": {"name": "get_weather", "arguments": args}}]}}]});
+    let server = MockSse::start(Script::sse([
+        data(call(2, "{")),
+        data(call(0, "{")),
+        data(call(1, "{")),
+        data(call(0, "}")),
+        done(),
+    ]))
+    .await;
+
+    let request: NonStreamingChatCompletionRequestBody = serde_json::from_value(json!({
+        "model": "test-model",
+        "messages": [{"role": "user", "content": "hello"}],
+    }))
+    .unwrap();
+    let response = virtual_non_streaming_chat_completion(&server.url, request, None)
+        .await
+        .unwrap();
+
+    let indices: Vec<u32> = response
+        .body
+        .choices
+        .iter()
+        .map(|c| c.common.index)
+        .collect();
+    assert_eq!(indices, [0, 1, 2]);
+    let call = &response.body.choices[0]
+        .message
+        .common
+        .tool_calls
+        .as_ref()
+        .unwrap()[0];
+    assert_eq!(call.function.name.as_deref(), Some("get_weather"));
+    assert_eq!(call.function.arguments.as_deref(), Some("{}"));
+}
+
+#[tokio::test]
+async fn a_stream_closed_without_done_still_reports_its_stats() {
+    let server = MockSse::start(Script::sse([data(delta(0, "Hi")), data(usage(4, 1))])).await;
+
+    let events = collect(&server, streaming_request(json!({}))).await;
+
+    let StreamingChatCompletionEvent::Done { stats } = events.last().unwrap() else {
+        panic!("last event should be Done");
+    };
+    assert_eq!(stats.input_tokens, 4);
+    assert_eq!(stats.output_tokens, 1);
+}

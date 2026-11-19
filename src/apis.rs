@@ -1,4 +1,5 @@
 pub mod chat_completion;
+pub mod completions;
 pub mod decisions;
 pub mod embeddings;
 pub mod messages;

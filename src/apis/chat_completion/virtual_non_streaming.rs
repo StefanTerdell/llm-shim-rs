@@ -20,10 +20,11 @@ use crate::{
     traits::estimate_tokens::EstimateTokens,
 };
 
+use indexmap::IndexMap;
 use itertools::Itertools;
 use reqwest::IntoUrl;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use stefans_utils::prelude::MapInto;
 use tokio_stream::StreamExt;
 
@@ -40,10 +41,11 @@ pub async fn virtual_non_streaming_chat_completion<'a>(
 
     #[derive(Default)]
     struct Acc {
-        choices: HashMap<u32, NonStreamingChatCompletionChoice>,
+        choices: BTreeMap<u32, NonStreamingChatCompletionChoice>,
         usage: Option<ChatCompletionUsage>,
         stats: Option<StreamStats>,
         error: Option<Value>,
+        metadata: IndexMap<String, Value>,
     }
 
     let mut acc = Acc::default();
@@ -59,7 +61,11 @@ pub async fn virtual_non_streaming_chat_completion<'a>(
             acc.stats = event_stats_opt;
         };
 
-        if let Some(chunk) = chunk_opt {
+        if let Some(mut chunk) = chunk_opt {
+            chunk.additional_properties.shift_remove("object");
+            chunk.additional_properties.shift_remove("model");
+            acc.metadata.extend(chunk.additional_properties);
+
             if chunk.usage.is_some() {
                 acc.usage = chunk.usage;
             };
@@ -101,7 +107,7 @@ pub async fn virtual_non_streaming_chat_completion<'a>(
             choices,
             usage: Some(usage),
             error: None,
-            additional_properties: Default::default(),
+            additional_properties: acc.metadata,
         },
         stats: acc.stats,
         error: acc.error,
