@@ -189,12 +189,12 @@ impl ChatCompletionReasoningRemappingState {
                 ChatCompletionReasoningPosition::Reasoning => {
                     reasoning_content_opt = inner.common.take_reasoning();
                     state.started = reasoning_content_opt.is_some();
-                    state.stopped = state.started && has_content(inner);
+                    state.stopped = state.started && ends_reasoning(inner);
                 }
                 ChatCompletionReasoningPosition::ReasoningContent => {
                     reasoning_content_opt = inner.common.take_reasoning_content();
                     state.started = reasoning_content_opt.is_some();
-                    state.stopped = state.started && has_content(inner);
+                    state.stopped = state.started && ends_reasoning(inner);
                 }
             },
             // started, not stopped
@@ -231,11 +231,15 @@ impl ChatCompletionReasoningRemappingState {
                 }
                 ChatCompletionReasoningPosition::Reasoning => {
                     reasoning_content_opt = inner.common.take_reasoning();
-                    state.stopped = reasoning_content_opt.is_none() || has_content(inner);
+                    // A delta with neither reasoning, content nor tool calls (e.g. an empty delta)
+                    // carries no signal and must not end the reasoning.
+                    state.stopped = ends_reasoning(inner);
                 }
                 ChatCompletionReasoningPosition::ReasoningContent => {
                     reasoning_content_opt = inner.common.take_reasoning_content();
-                    state.stopped = reasoning_content_opt.is_none() || has_content(inner);
+                    // A delta with neither reasoning, content nor tool calls (e.g. an empty delta)
+                    // carries no signal and must not end the reasoning.
+                    state.stopped = ends_reasoning(inner);
                 }
             },
             // started, stopped
@@ -292,9 +296,15 @@ impl ChatCompletionReasoningRemappingState {
     }
 }
 
-/// Content arriving alongside a reasoning field means the reasoning has ended.
-fn has_content(inner: &ChatCompletionResponseMessage) -> bool {
+/// Content or tool calls arriving (with or without a reasoning field) means the
+/// reasoning has ended.
+fn ends_reasoning(inner: &ChatCompletionResponseMessage) -> bool {
     inner.content().is_some_and(|c| !c.is_empty())
+        || inner
+            .common
+            .tool_calls
+            .as_ref()
+            .is_some_and(|t| !t.is_empty())
 }
 
 #[cfg(test)]
@@ -378,6 +388,59 @@ mod tests {
             from_chunks(chunks),
             from_content("[THINK]deep thought[/THINK]after")
         );
+    }
+
+    #[test]
+    fn should_ignore_empty_deltas_while_reasoning() {
+        for from in [
+            ChatCompletionReasoningPosition::Reasoning,
+            ChatCompletionReasoningPosition::ReasoningContent,
+        ] {
+            let with_source = |text: &str| match from {
+                ChatCompletionReasoningPosition::Reasoning => from_reasoning(text),
+                _ => from_reasoning_content(text),
+            };
+
+            let mut chunks = [
+                with_source("part1"),
+                message(),
+                from_content(""),
+                with_source("part2"),
+                from_content("after"),
+            ];
+
+            let mut state = ChatCompletionReasoningRemappingState::new((
+                from,
+                ChatCompletionReasoningPosition::content_unchecked("<r>", "</r>"),
+            ));
+
+            for chunk in chunks.iter_mut() {
+                state.apply(0, chunk);
+            }
+
+            assert_eq!(
+                from_chunks(chunks),
+                from_content("<r>part1part2</r>after"),
+                "from {from:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_stop_reasoning_on_tool_calls() {
+        let mut chunks = [from_reasoning("thinking"), from_tool_call("lookup")];
+
+        let mut state = ChatCompletionReasoningRemappingState::new((
+            ChatCompletionReasoningPosition::Reasoning,
+            ChatCompletionReasoningPosition::content_unchecked("<r>", "</r>"),
+        ));
+
+        for chunk in chunks.iter_mut() {
+            state.apply(0, chunk);
+        }
+
+        assert_eq!(chunks[1].content(), Some("</r>"));
+        assert!(state.open_indices().is_empty());
     }
 
     #[test]
@@ -474,10 +537,13 @@ mod tests {
 
     mod helpers {
         use super::*;
-        use crate::apis::chat_completion::models::api::common::CommonChatCompletionMessage;
+        use crate::apis::chat_completion::models::api::common::{
+            ChatCompletionRequestMessageFunctionToolCall, ChatCompletionRequestMessageToolCall,
+            CommonChatCompletionMessage,
+        };
         use std::fmt::Display;
 
-        fn message() -> ChatCompletionResponseMessage {
+        pub fn message() -> ChatCompletionResponseMessage {
             ChatCompletionResponseMessage {
                 content: None,
                 common: CommonChatCompletionMessage {
@@ -494,6 +560,20 @@ mod tests {
                 content: Some(Some(content.to_string())),
                 ..message()
             }
+        }
+
+        pub fn from_tool_call(name: impl Display) -> ChatCompletionResponseMessage {
+            let mut message = message();
+            message.common.tool_calls = Some(vec![ChatCompletionRequestMessageToolCall {
+                index: Some(0),
+                function: ChatCompletionRequestMessageFunctionToolCall {
+                    name: Some(name.to_string()),
+                    arguments: None,
+                    additional_properties: Default::default(),
+                },
+                additional_properties: Default::default(),
+            }]);
+            message
         }
 
         pub fn from_reasoning(reasoning: impl Display) -> ChatCompletionResponseMessage {
