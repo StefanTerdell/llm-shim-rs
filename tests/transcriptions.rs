@@ -9,7 +9,8 @@ use llm_shim::{
             api::{
                 request::{AudioFile, TranscriptionsFields, TranscriptionsRequest},
                 response::{
-                    TranscriptionsResponse, non_streaming::TranscriptionsResponseBody,
+                    TranscriptionsResponse,
+                    non_streaming::{TranscriptionsResponseBody, TranscriptionsUsageType},
                     streaming::TranscriptionsStreamEvent,
                 },
             },
@@ -165,11 +166,11 @@ async fn duration_usage_leaves_token_counts_estimated_and_passes_through() {
     let TranscriptionsResponseBody::Json(body) = &response.body else {
         panic!("expected a JSON body");
     };
-    assert_eq!(
-        body.usage.as_ref().unwrap().additional_properties["seconds"],
-        json!(4)
-    );
-    assert_eq!(body.additional_properties["language"], json!("english"));
+    let usage = body.usage.as_ref().unwrap();
+    assert_eq!(usage.usage_type, Some(TranscriptionsUsageType::Duration));
+    assert_eq!(usage.seconds, Some(4.0));
+    assert_eq!(body.duration, Some(4.0));
+    assert_eq!(body.language.as_deref(), Some("english"));
     assert!(response.stats.input_tokens_is_estimate);
     assert!(response.stats.output_tokens_is_estimate);
     assert!(response.stats.output_tokens > 0);
@@ -333,4 +334,297 @@ async fn non_streaming_sleeps_when_the_request_exceeded_max_tps() {
 
     assert!(started.elapsed() >= Duration::from_millis(450));
     assert!(response.stats.chunks[0].tps_correction_duration.is_some());
+}
+
+fn vllm_chunk(content: &str) -> Frame {
+    data(
+        json!({"id": "t-1", "object": "transcription.chunk", "model": "whisper-large-v3", "choices": [{"delta": {"content": content}}]}),
+    )
+}
+
+async fn collect_events(
+    url: &str,
+    options: TranscriptionsOptions<'_>,
+) -> Vec<StreamingTranscriptionsEvent> {
+    let mut stream = streaming_transcriptions(url, request(json!({})), options)
+        .await
+        .unwrap();
+    let mut events = vec![];
+    while let Some(event) = stream.next().await {
+        events.push(event.unwrap());
+    }
+    events
+}
+
+fn stream_events(events: &[StreamingTranscriptionsEvent]) -> Vec<serde_json::Value> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            StreamingTranscriptionsEvent::Event { event } => {
+                Some(serde_json::to_value(event).unwrap())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn normalizes_vllm_chat_chunks_into_delta_and_done_events() {
+    let server = MockSse::start(Script::sse([
+        vllm_chunk(" Hello"),
+        vllm_chunk(","),
+        data(json!({"object": "transcription.chunk", "choices": [{"delta": {"content": ""}, "finish_reason": "stop"}]})),
+        data(json!({"object": "transcription.chunk", "choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 2, "total_tokens": 14}})),
+        done(),
+    ]))
+    .await;
+
+    let events = collect_events(
+        &server.transcriptions_url,
+        TranscriptionsOptions::default().with_normalized_events(),
+    )
+    .await;
+
+    assert_eq!(
+        stream_events(&events),
+        vec![
+            json!({"type": "transcript.text.delta", "delta": " Hello"}),
+            json!({"type": "transcript.text.delta", "delta": ","}),
+            json!({"type": "transcript.text.done", "text": " Hello,", "usage": {"type": "tokens", "input_tokens": 12, "output_tokens": 2, "total_tokens": 14}}),
+        ]
+    );
+
+    let stats = done_stats(&events);
+    assert_eq!(stats.input_tokens, 12);
+    assert_eq!(stats.output_tokens, 2);
+    assert!(!stats.output_tokens_is_estimate);
+}
+
+#[tokio::test]
+async fn normalizes_a_json_body_returned_in_place_of_a_stream() {
+    let server = MockSse::start(Script::json(json!({"text": "Hello there", "usage": {"type": "duration", "seconds": 4}, "duration": 3.6}))).await;
+
+    let events = collect_events(
+        &server.transcriptions_url,
+        TranscriptionsOptions::default().with_normalized_events(),
+    )
+    .await;
+
+    assert_eq!(
+        stream_events(&events),
+        vec![
+            json!({"type": "transcript.text.delta", "delta": "Hello there"}),
+            json!({"type": "transcript.text.done", "text": "Hello there", "usage": {"type": "duration", "seconds": 4.0}}),
+        ]
+    );
+    assert!(done_stats(&events).output_tokens > 0);
+    assert_eq!(server.single_request()["stream"], json!("true"));
+}
+
+#[tokio::test]
+async fn normalizes_bare_text_frames() {
+    let server = MockSse::start(Script::sse([
+        data(json!({"text": "Hello there", "id": "abc"})),
+        done(),
+    ]))
+    .await;
+
+    let events = collect_events(
+        &server.transcriptions_url,
+        TranscriptionsOptions::default().with_normalized_events(),
+    )
+    .await;
+
+    assert_eq!(
+        stream_events(&events),
+        vec![
+            json!({"type": "transcript.text.delta", "delta": "Hello there"}),
+            json!({"type": "transcript.text.done", "text": "Hello there"}),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn normalization_leaves_openai_events_untouched() {
+    let server = MockSse::start(Script::sse([
+        event(json!({"type": "transcript.text.delta", "delta": "Hi"})),
+        event(json!({"type": "transcript.text.segment", "id": "seg_0", "text": "Hi"})),
+        event(json!({"type": "transcript.text.done", "text": "Hi", "usage": tokens_usage(5, 1)})),
+    ]))
+    .await;
+
+    let events = collect_events(
+        &server.transcriptions_url,
+        TranscriptionsOptions::default().with_normalized_events(),
+    )
+    .await;
+
+    assert_eq!(
+        stream_events(&events),
+        vec![
+            json!({"type": "transcript.text.delta", "delta": "Hi"}),
+            json!({"type": "transcript.text.segment", "id": "seg_0", "text": "Hi"}),
+            json!({"type": "transcript.text.done", "text": "Hi", "usage": tokens_usage(5, 1)}),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn without_normalization_vllm_chunks_pass_through_as_other() {
+    let server = MockSse::start(Script::sse([vllm_chunk("Hi"), done()])).await;
+
+    let events = collect_events(&server.transcriptions_url, TranscriptionsOptions::default()).await;
+
+    assert_eq!(events.len(), 2);
+    assert!(matches!(
+        &events[0],
+        StreamingTranscriptionsEvent::Event {
+            event: TranscriptionsStreamEvent::Other(_)
+        }
+    ));
+}
+
+#[tokio::test]
+async fn without_normalization_a_json_body_passes_through_as_one_event() {
+    let body = json!({"text": "Hello there", "id": "abc"});
+    let server = MockSse::start(Script::json(body.clone())).await;
+
+    let events = collect_events(&server.transcriptions_url, TranscriptionsOptions::default()).await;
+
+    assert_eq!(stream_events(&events), vec![body]);
+    assert!(done_stats(&events).output_tokens > 0);
+}
+
+#[tokio::test]
+async fn normalization_bills_a_body_without_usage_by_its_duration() {
+    let server = MockSse::start(Script::json(json!({"text": "Hi", "duration": 2.5}))).await;
+
+    let events = collect_events(
+        &server.transcriptions_url,
+        TranscriptionsOptions::default().with_normalized_events(),
+    )
+    .await;
+
+    assert_eq!(
+        stream_events(&events)[1],
+        json!({"type": "transcript.text.done", "text": "Hi", "usage": {"type": "duration", "seconds": 2.5}})
+    );
+}
+
+fn verbose_body() -> serde_json::Value {
+    json!({
+        "id": "vox-1",
+        "task": "transcribe",
+        "language": "sv",
+        "duration": 4.5705625,
+        "text": " Hello there. General Kenobi.",
+        "segments": [
+            {"id": 0, "start": 0.0, "end": 1.5, "text": " Hello there.", "tokens": [1, 2]},
+            {"id": 1, "start": 1.5, "end": 3661.0045, "text": " General Kenobi.", "tokens": [3]}
+        ]
+    })
+}
+
+async fn verbose_transcription(
+    format: Option<&str>,
+) -> (
+    llm_shim::apis::transcriptions::models::api::response::non_streaming::NonStreamingTranscriptionsResponse,
+    serde_json::Value,
+){
+    let server = MockSse::start(Script::json(verbose_body())).await;
+    let extra = format.map_or(json!({}), |format| json!({"response_format": format}));
+    let response = non_streaming_transcriptions(
+        &server.transcriptions_url,
+        request(extra),
+        TranscriptionsOptions::default().with_upstream_verbose_json(),
+    )
+    .await
+    .unwrap();
+    (response, server.single_request())
+}
+
+fn text_body(body: &TranscriptionsResponseBody) -> &str {
+    match body {
+        TranscriptionsResponseBody::Text(text) => text,
+        TranscriptionsResponseBody::Json(_) => panic!("expected a text body"),
+    }
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_renders_json_without_the_verbose_fields() {
+    let (response, sent) = verbose_transcription(None).await;
+
+    assert_eq!(sent["response_format"], json!("verbose_json"));
+    let TranscriptionsResponseBody::Json(body) = &response.body else {
+        panic!("expected a JSON body");
+    };
+    assert_eq!(
+        serde_json::to_value(body).unwrap(),
+        json!({"id": "vox-1", "text": " Hello there. General Kenobi.", "usage": {"type": "duration", "seconds": 4.5705625}})
+    );
+    assert_eq!(response.usage.unwrap().seconds, Some(4.5705625));
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_renders_text() {
+    let (response, sent) = verbose_transcription(Some("text")).await;
+
+    assert_eq!(sent["response_format"], json!("verbose_json"));
+    assert_eq!(text_body(&response.body), " Hello there. General Kenobi.");
+    assert_eq!(response.usage.unwrap().seconds, Some(4.5705625));
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_renders_srt_from_the_segments() {
+    let (response, _) = verbose_transcription(Some("srt")).await;
+
+    assert_eq!(
+        text_body(&response.body),
+        "1\n00:00:00,000 --> 00:00:01,500\nHello there.\n\n2\n00:00:01,500 --> 01:01:01,005\nGeneral Kenobi.\n\n"
+    );
+    assert!(response.usage.is_some());
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_renders_vtt_from_the_segments() {
+    let (response, _) = verbose_transcription(Some("vtt")).await;
+
+    assert_eq!(
+        text_body(&response.body),
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.500\nHello there.\n\n00:00:01.500 --> 01:01:01.005\nGeneral Kenobi.\n\n"
+    );
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_keeps_a_requested_verbose_body_and_adds_usage() {
+    let (response, _) = verbose_transcription(Some("verbose_json")).await;
+
+    let TranscriptionsResponseBody::Json(body) = &response.body else {
+        panic!("expected a JSON body");
+    };
+    let mut expected = verbose_body();
+    expected["usage"] = json!({"type": "duration", "seconds": 4.5705625});
+    assert_eq!(serde_json::to_value(body).unwrap(), expected);
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_leaves_diarized_json_alone() {
+    let (_, sent) = verbose_transcription(Some("diarized_json")).await;
+
+    assert_eq!(sent["response_format"], json!("diarized_json"));
+}
+
+#[tokio::test]
+async fn upstream_verbose_json_passes_a_plain_text_answer_through() {
+    let server = MockSse::start(Script::text("Hello there")).await;
+    let response = non_streaming_transcriptions(
+        &server.transcriptions_url,
+        request(json!({"response_format": "text"})),
+        TranscriptionsOptions::default().with_upstream_verbose_json(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(text_body(&response.body), "Hello there");
+    assert!(response.usage.is_none());
 }

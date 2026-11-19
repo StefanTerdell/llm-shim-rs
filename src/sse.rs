@@ -1,6 +1,6 @@
 use crate::error::{Error, send_checked};
 use eventsource_stream::Eventsource;
-use reqwest::RequestBuilder;
+use reqwest::{RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde_json::error::Category;
 use tokio_stream::{Stream, StreamExt};
@@ -10,11 +10,16 @@ pub(crate) use eventsource_stream::Event;
 pub(crate) async fn send(
     request: RequestBuilder,
 ) -> Result<impl Stream<Item = Result<Event, Error>> + Send + 'static, Error> {
-    Ok(send_checked(request)
-        .await?
+    Ok(events(send_checked(request).await?))
+}
+
+pub(crate) fn events(
+    response: Response,
+) -> impl Stream<Item = Result<Event, Error>> + Send + 'static {
+    response
         .bytes_stream()
         .eventsource()
-        .map(|result| result.map_err(Error::from)))
+        .map(|result| result.map_err(Error::from))
 }
 
 #[derive(Default)]

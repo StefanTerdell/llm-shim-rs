@@ -4,9 +4,11 @@ use reqwest::{
     Body,
     multipart::{Form, Part},
 };
+use serde::Deserialize;
 use serde_json::Value;
 use std::fmt::Display;
 use std::path::Path;
+use std::str::FromStr;
 use tokio::fs::File;
 
 use crate::error::Error;
@@ -30,7 +32,11 @@ impl TranscriptionsRequest {
         self
     }
 
-    pub fn into_form(self, stream: Option<bool>) -> Result<Form, Error> {
+    pub fn into_form(
+        self,
+        stream: Option<bool>,
+        response_format: Option<TranscriptionsResponseFormat>,
+    ) -> Result<Form, Error> {
         let mut form = Form::new().part("file", self.file.into_part()?);
 
         if let Some(model) = self.fields.model {
@@ -39,6 +45,10 @@ impl TranscriptionsRequest {
 
         if let Some(stream) = stream.or(self.fields.stream) {
             form = form.text("stream", stream.to_string());
+        }
+
+        if let Some(response_format) = response_format.or(self.fields.response_format) {
+            form = form.text("response_format", response_format.as_str());
         }
 
         for (key, value) in self.fields.additional_properties {
@@ -71,6 +81,7 @@ fn scalar(value: Value) -> String {
 pub struct TranscriptionsFields {
     pub model: Option<String>,
     pub stream: Option<bool>,
+    pub response_format: Option<TranscriptionsResponseFormat>,
     #[serde(flatten)]
     pub additional_properties: IndexMap<String, Value>,
 }
@@ -79,6 +90,45 @@ impl TranscriptionsFields {
     pub fn with_model(mut self, model: Option<impl Display>) -> Self {
         self.model = model.map(|t| t.to_string());
         self
+    }
+}
+
+#[derive(..ApiModel, Copy, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionsResponseFormat {
+    Json,
+    Text,
+    Srt,
+    VerboseJson,
+    Vtt,
+    DiarizedJson,
+}
+
+impl TranscriptionsResponseFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Text => "text",
+            Self::Srt => "srt",
+            Self::VerboseJson => "verbose_json",
+            Self::Vtt => "vtt",
+            Self::DiarizedJson => "diarized_json",
+        }
+    }
+
+    pub fn renders_from_verbose_json(self) -> bool {
+        match self {
+            Self::Json | Self::Text | Self::Srt | Self::VerboseJson | Self::Vtt => true,
+            Self::DiarizedJson => false,
+        }
+    }
+}
+
+impl FromStr for TranscriptionsResponseFormat {
+    type Err = serde::de::value::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::deserialize(serde::de::value::StrDeserializer::new(value))
     }
 }
 

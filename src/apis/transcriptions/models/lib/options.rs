@@ -11,6 +11,8 @@ pub struct TranscriptionsOptions<'a> {
     pub credentials: Option<Credentials>,
     pub max_tps: Option<&'a dyn MaxTps>,
     pub max_tps_sample_interval: Option<Duration>,
+    pub normalize_events: bool,
+    pub upstream_verbose_json: bool,
 }
 
 impl Default for TranscriptionsOptions<'_> {
@@ -20,6 +22,8 @@ impl Default for TranscriptionsOptions<'_> {
             credentials: None,
             max_tps: None,
             max_tps_sample_interval: Some(DEFAULT_MAX_TPS_SAMPLE_INTERVAL),
+            normalize_events: false,
+            upstream_verbose_json: false,
         }
     }
 }
@@ -64,6 +68,26 @@ impl TranscriptionsOptions<'_> {
 
     pub fn without_max_tps_sample_interval(mut self) -> Self {
         self.max_tps_sample_interval = None;
+        self
+    }
+
+    pub fn with_normalized_events(mut self) -> Self {
+        self.normalize_events = true;
+        self
+    }
+
+    pub fn without_normalized_events(mut self) -> Self {
+        self.normalize_events = false;
+        self
+    }
+
+    pub fn with_upstream_verbose_json(mut self) -> Self {
+        self.upstream_verbose_json = true;
+        self
+    }
+
+    pub fn without_upstream_verbose_json(mut self) -> Self {
+        self.upstream_verbose_json = false;
         self
     }
 }
